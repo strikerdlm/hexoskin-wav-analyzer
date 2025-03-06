@@ -1,0 +1,53 @@
+﻿# Python bytecode
+__pycache__/
+*.py[cod]
+*.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.cursor/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Data files
+*.csv
+*.xlsx
+*.wav
+Data backup/
+Old plots/
+
+# Explicitly exclude Sol folders
+Sol*/
+Sol\ */
+/Sol\ *
+/Sol*/
+
+# Exclude specific data files
+Mara_full.csv
+Cronograma*.xlsx
+analyze_physiological_data.py
+compile_full_dataset.py
+fix_data_analysis.py
+1.ipynb
+
+# Logs
+*.log
+
+# OS specific
+.DS_Store
+Thumbs.db
