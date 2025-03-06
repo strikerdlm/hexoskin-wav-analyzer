@@ -1,0 +1,11 @@
+theme: jekyll-theme-cayman
+title: Hexoskin WAV Analyzer
+description: An advanced application for analyzing physiological data from Hexoskin WAV files
+show_downloads: true
+google_analytics:
+github:
+  repository_url: https://github.com/strikerdlm/hexoskin-wav-analyzer
+  zip_url: https://github.com/strikerdlm/hexoskin-wav-analyzer/archive/refs/heads/main.zip
+  tar_url: https://github.com/strikerdlm/hexoskin-wav-analyzer/archive/refs/heads/main.tar.gz
+  owner_name: Diego Malpica, MD
+  owner_url: https://github.com/strikerdlm 
