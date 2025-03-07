@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="hexoskin-wav-analyzer",
-    version="0.0.1",
+    version="0.0.2",
     description="Tool for analyzing Hexoskin WAV files containing physiological data",
     author="Diego Malpica MD",
     author_email="dlmalpicah@unal.edu.co",

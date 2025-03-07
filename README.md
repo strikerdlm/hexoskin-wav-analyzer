@@ -1,6 +1,6 @@
 # Hexoskin WAV File Analyzer
 
-**Version 0.0.1**
+**Version 0.0.2**
 
 **Developed by Diego Malpica MD**  
 Aerospace and Physiology Research, March 2025  
@@ -24,14 +24,27 @@ This project provides tools for loading, analyzing, and visualizing Hexoskin WAV
 - Plot the data with customizable visualization options
 - Time unit conversion (seconds, minutes, hours, days) with accurate timestamps
 - View controls (fit to window, zoom in/out)
-- Automatic statistical analysis when selecting files
+- Comprehensive statistical analysis with multiple normality tests
+- Advanced descriptive statistics with distribution analysis
+- Compare up to 15 datasets with parametric and non-parametric tests
+- Multiple post-hoc analysis methods with effect size calculations
+- Support for repeated measures designs and factorial analysis
+- Interactive statistical visualization with QQ plots and histograms
 - Save processed data to CSV format
 - Export graphs as high-quality PNG images
-- Perform statistical analysis including descriptive statistics and normality tests
-- Compare datasets with non-parametric statistical tests
-- Align and normalize datasets for better comparison
+- Export statistical results to CSV
 - GUI for interactive data analysis with a tabbed interface
 - Command-line interface for batch processing
+
+## What's New in Version 0.0.2
+
+- Enhanced statistical analysis with comprehensive descriptive statistics
+- Advanced normality tests including Anderson-Darling and Jarque-Bera
+- Support for comparing up to 15 datasets simultaneously
+- New statistical tests: Welch's ANOVA, RM-ANOVA, and Aligned Ranks Transform
+- Improved post-hoc analysis with multiple correction methods (Bonferroni, FDR)
+- Interactive statistical visualization with QQ plots and histograms
+- Export capabilities for all statistical results
 
 ## Installation
 
@@ -135,25 +148,60 @@ loader.save_to_csv("processed_data.csv")
 
 ## Statistical Analysis
 
-The application includes statistical analysis capabilities:
+The application includes comprehensive statistical analysis capabilities:
 
 1. **Descriptive Statistics**
    - Mean, median, standard deviation
-   - Min/max values
-   - 25th and 75th percentiles
+   - Min/max values and range
+   - Quartiles and interquartile range (IQR)
+   - Variance and coefficient of variation
+   - Skewness and kurtosis with confidence intervals
+   - Outlier detection and counting
+   - Percentiles (1st, 5th, 10th, 20th, 30th, 40th, 60th, 70th, 80th, 90th, 95th, 99th)
+   - Mode and mode count
+   - Median absolute deviation (MAD)
 
 2. **Normality Tests**
-   - Shapiro-Wilk test
-   - D'Agostino's K^2 test
-   - Kolmogorov-Smirnov test
-   - Skewness and kurtosis calculation
-   - Overall assessment of data distribution
+   - Shapiro-Wilk test (best for smaller samples)
+   - D'Agostino's K^2 test (for skewness and kurtosis)
+   - Kolmogorov-Smirnov test (against normal distribution)
+   - Anderson-Darling test (sensitive to tails of distribution)
+   - Jarque-Bera test (based on skewness and kurtosis)
+   - Distribution shape analysis with interpretations
+   - QQ plot visualization with reference line
+   - Histogram with normal distribution curve
+   - Overall assessment with recommendations
 
-3. **Non-parametric Comparison Tests**
+3. **Comparison Tests for Two Datasets**
    - Mann-Whitney U test for independent samples
    - Wilcoxon signed-rank test for paired samples
-   - Kolmogorov-Smirnov test for distribution comparison
+   - Kolmogorov-Smirnov two-sample test for distribution comparison
+   - Independent t-test for normally distributed data
+   - Welch's t-test for unequal variances
    - Effect size calculation and interpretation
+   - Post-hoc analysis with recommendations
+
+4. **Multiple Dataset Comparison (up to 15 datasets)**
+   - One-way ANOVA for normally distributed data with equal variances
+   - Welch's ANOVA for normally distributed data with unequal variances
+   - Kruskal-Wallis H-test for non-parametric data
+   - Friedman test for non-parametric repeated measures
+   - Repeated Measures ANOVA for normally distributed repeated measures
+   - Aligned Ranks Transform ANOVA for non-normal factorial designs
+   - Automatic test selection based on data characteristics
+   - Effect size calculation with interpretation
+
+5. **Post-hoc Analysis**
+   - Tukey's HSD test after ANOVA
+   - Games-Howell test after Welch's ANOVA
+   - Dunn's test after Kruskal-Wallis
+   - Nemenyi test after Friedman
+   - Paired t-tests after RM-ANOVA
+   - Wilcoxon signed-rank tests after Aligned Ranks Transform
+   - Multiple testing corrections:
+     - Bonferroni correction (controls family-wise error rate)
+     - Benjamini-Hochberg procedure (controls false discovery rate)
+   - Effect size calculation for all pairwise comparisons
 
 ## Advanced Features
 

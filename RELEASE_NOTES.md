@@ -1,3 +1,34 @@
+# Hexoskin WAV Analyzer v0.0.2 - Statistical Enhancement Release
+
+**Release Date:** March 2025
+
+## New Features
+
+- Enhanced statistical analysis with comprehensive descriptive statistics
+- Advanced normality tests including Anderson-Darling and Jarque-Bera
+- Support for comparing up to 15 datasets simultaneously
+- New statistical tests: Welch's ANOVA, RM-ANOVA, and Aligned Ranks Transform
+- Improved post-hoc analysis with multiple correction methods (Bonferroni, FDR)
+- Interactive statistical visualization with QQ plots and histograms
+- Export capabilities for all statistical results
+
+## Improvements
+
+- More detailed descriptive statistics including variance, IQR, and percentiles
+- Better visualization of data distributions with QQ plots and histograms
+- Enhanced effect size calculations for all statistical tests
+- Improved recommendations based on data characteristics
+- More robust handling of edge cases in statistical analysis
+
+## Bug Fixes
+
+- Fixed issues with normality test calculations for large datasets
+- Corrected effect size calculations for non-parametric tests
+- Improved error handling in statistical comparison functions
+- Fixed display issues in the statistics results window
+
+---
+
 # Hexoskin WAV Analyzer v0.0.1 - Initial Release
 
 This is the initial release of the Hexoskin WAV Analyzer, a tool for analyzing physiological data from Hexoskin smart garments.
