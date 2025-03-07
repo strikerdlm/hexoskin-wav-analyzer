@@ -3165,78 +3165,138 @@ class HexoskinWavApp(tk.Tk):
         
         # Adjust figure size based on number of files to compare (for scrolling)
         num_files = len(self.selected_files_for_comparison)
-        figure_height = max(8, 4 + num_files * 1.5)  # Base height + extra height per file
-        self.comparison_figure.set_size_inches(5, figure_height)
+        figure_height = max(12, 6 + num_files * 1.5)  # Increase base height for 3 plots
         
-        # Recreate subplots with adjusted heights
-        self.comp_ax1 = self.comparison_figure.add_subplot(211)  # Time series
-        self.comp_ax2 = self.comparison_figure.add_subplot(212)  # Box plot
+        # Get the width of the parent widget for full width display
+        canvas_parent_width = self.comparison_canvas_scroll.winfo_width()
+        fig_width_inches = max(8, canvas_parent_width / 100)  # Convert pixels to inches
+        
+        self.comparison_figure.set_size_inches(fig_width_inches, figure_height)
+        
+        # Recreate subplots with adjusted heights and better proportions - now 3 plots
+        gs = self.comparison_figure.add_gridspec(3, 1, height_ratios=[2, 1, 2])
+        self.comp_ax1 = self.comparison_figure.add_subplot(gs[0])  # Time series
+        self.comp_ax_ci = self.comparison_figure.add_subplot(gs[1])  # NEW: CI plot
+        self.comp_ax2 = self.comparison_figure.add_subplot(gs[2])  # Box plot
         
         # Process all selected files
         processed_data = []
         
-        # Apply preprocessing to all datasets
+        # Get preprocessing options
+        normalize = self.normalize_var.get()
+        norm_method = self.norm_method_var.get()
+        align = self.align_var.get()
+        
+        # Time unit for x-axis (was missing and causing the error)
+        time_unit = self.time_unit_var.get() if hasattr(self, 'time_unit_var') else 'seconds'
+        
+        # Process each file
         for i, file_info in enumerate(self.selected_files_for_comparison):
             # Update progress
-            progress = (i / len(self.selected_files_for_comparison)) * 40  # 40% of progress for data prep
+            progress = 10 + (i / len(self.selected_files_for_comparison)) * 40
             self.progress_var.set(progress)
-            self.progress_label.config(text=f"Processing {file_info['name']}...")
+            self.progress_label.config(text=f"Processing file {i+1} of {len(self.selected_files_for_comparison)}...")
             self.update_idletasks()
             
             loader = file_info['loader']
+            
+            # Get metadata
+            metadata = loader.get_metadata()
+            
+            # Get data
             data = loader.get_data().copy()
             
-            # Apply normalization if enabled
-            if self.normalize_var.get():
-                data = HexoskinWavLoader.normalize_dataset(
-                    data, 
-                    method=self.norm_method_var.get()
-                )
-            
-            # Store processed data
-            processed_data.append({
-                'name': loader.metadata.get('sensor_name', f'File {i+1}'),
-                'data': data,
-                'start_date': loader.metadata.get('start_date', None)
-            })
+            # Calculate CI95% for mean and median using bootstrap
+            try:
+                # Filter extreme outliers for more stable estimation
+                data_values = data['value'].values
+                data_mean = np.mean(data_values)
+                data_std = np.std(data_values)
+                
+                # Create mask for non-extreme values (±5 standard deviations)
+                mask = np.abs(data_values - data_mean) <= 5 * data_std
+                clean_values = data_values[mask]
+                
+                # Bootstrap CI calculation
+                n_bootstrap = 1000
+                bootstrap_means = []
+                bootstrap_medians = []
+                
+                for _ in range(n_bootstrap):
+                    bootstrap_sample = np.random.choice(clean_values, size=len(clean_values), replace=True)
+                    bootstrap_means.append(np.mean(bootstrap_sample))
+                    bootstrap_medians.append(np.median(bootstrap_sample))
+                
+                mean_ci_lower = np.percentile(bootstrap_means, 2.5)
+                mean_ci_upper = np.percentile(bootstrap_means, 97.5)
+                median_ci_lower = np.percentile(bootstrap_medians, 2.5)
+                median_ci_upper = np.percentile(bootstrap_medians, 97.5)
+                
+                # Add to processed data with CI info
+                processed_data.append({
+                    'data': data,
+                    'name': file_info['name'],
+                    'start_date': metadata.get('start_date', ''),
+                    'mean': np.mean(clean_values),
+                    'median': np.median(clean_values),
+                    'mean_ci': [mean_ci_lower, mean_ci_upper],
+                    'median_ci': [median_ci_lower, median_ci_upper]
+                })
+            except Exception as e:
+                print(f"Error calculating CI for {file_info['name']}: {str(e)}")
+                # Still add the file even if CI calculation failed
+                processed_data.append({
+                    'data': data,
+                    'name': file_info['name'],
+                    'start_date': metadata.get('start_date', '')
+                })
         
-        # Apply alignment if enabled and there are exactly two datasets
-        if self.align_var.get() and len(processed_data) == 2:
+        # Align datasets if requested and exactly 2 datasets
+        if align and len(processed_data) == 2:
+            self.progress_var.set(50)
             self.progress_label.config(text="Aligning datasets...")
-            self.progress_var.set(45)  # 45% progress
             self.update_idletasks()
             
-            target_hz = None
-            if self.target_hz_var.get():
-                try:
-                    target_hz = float(self.target_hz_var.get())
-                except ValueError:
-                    pass
-                    
-            aligned_data1, aligned_data2 = HexoskinWavLoader.align_datasets(
-                processed_data[0]['data'],
-                processed_data[1]['data'],
-                target_hz=target_hz
-            )
-            
-            # Update processed data with aligned data
-            processed_data[0]['data'] = aligned_data1
-            processed_data[1]['data'] = aligned_data2
-            
-            # Add note if datasets were aligned
-            if len(aligned_data1) > 0:
-                self.comp_ax1.set_title(f'Time Series Comparison (Aligned at {target_hz or "auto"} Hz)')
-            else:
-                messagebox.showinfo("Warning", "Datasets could not be aligned - no overlapping time range")
-        
-        # Update progress
-        self.progress_var.set(50)  # 50% progress
-        self.progress_label.config(text="Plotting data...")
-        self.update_idletasks()
-        
-        # Get the time unit
-        time_unit = self.time_unit_var.get()
+            try:
+                # Get target Hz (use original Hz of first file if not specified)
+                target_hz_str = self.target_hz_var.get() if hasattr(self, 'target_hz_var') else ""
+                target_hz = float(target_hz_str) if target_hz_str and target_hz_str.lower() != "auto" else None
                 
+                # Get the two datasets
+                dataset1 = processed_data[0]['data'].copy()
+                dataset2 = processed_data[1]['data'].copy()
+                
+                # Align the datasets
+                aligned1, aligned2 = HexoskinWavLoader.align_datasets(dataset1, dataset2, target_hz=target_hz)
+                
+                # Replace data in processed_data
+                processed_data[0]['data'] = aligned1
+                processed_data[1]['data'] = aligned2
+                
+                # Indicate alignment in the plot title
+                if target_hz:
+                    self.comp_ax1.set_title(f'Time Series Comparison (Aligned at {target_hz} Hz)')
+                else:
+                    self.comp_ax1.set_title('Time Series Comparison (Aligned)')
+            except Exception as e:
+                print(f"Error aligning datasets: {str(e)}")
+                self.comp_ax1.set_title('Time Series Comparison (Alignment Failed)')
+        
+        # Normalize datasets if requested
+        if normalize:
+            self.progress_var.set(60)
+            self.progress_label.config(text="Normalizing datasets...")
+            self.update_idletasks()
+            
+            for i in range(len(processed_data)):
+                try:
+                    # Normalize the dataset
+                    processed_data[i]['data'] = HexoskinWavLoader.normalize_dataset(
+                        processed_data[i]['data'], method=norm_method
+                    )
+                except Exception as e:
+                    print(f"Error normalizing dataset {i}: {str(e)}")
+        
         # Plot time series for all datasets
         for i, file_data in enumerate(processed_data):
             data = file_data['data'].copy()
@@ -3295,15 +3355,15 @@ class HexoskinWavApp(tk.Tk):
         
         # Set time series plot properties
         if not self.comp_ax1.get_title():  # If title not already set by alignment
-            self.comp_ax1.set_title('Time Series Comparison')
+            self.comp_ax1.set_title('Time Series Comparison', fontsize=12, fontweight='bold')
         
         # Format x-axis if using real dates
         if time_unit == 'days' and any('datetime' in data_item['data'].columns for data_item in processed_data):
             self.comparison_figure.autofmt_xdate()
             
-        self.comp_ax1.set_xlabel(xlabel)
-        self.comp_ax1.set_ylabel('Value')
-        self.comp_ax1.grid(True)
+        self.comp_ax1.set_xlabel(xlabel, fontsize=10)
+        self.comp_ax1.set_ylabel('Value', fontsize=10)
+        self.comp_ax1.grid(True, linestyle='--', alpha=0.3)
         
         # Add legend with smaller font for many items
         legend_font_size = max(6, min(10, 10 - (len(processed_data) - 5) * 0.5))
@@ -3314,9 +3374,70 @@ class HexoskinWavApp(tk.Tk):
             self.comp_ax1.legend(fontsize=legend_font_size)
         
         # Update progress
-        self.progress_var.set(70)  # 70% progress
-        self.progress_label.config(text="Creating boxplot...")
+        self.progress_var.set(70)
+        self.progress_label.config(text="Creating CI95% visualization...")
         self.update_idletasks()
+        
+        # Create CI95% plot (Forest plot style)
+        # Determine whether to use mean or median CI based on data characteristics
+        use_median = False  # Default to mean, could be based on normality tests
+        
+        # Plot CI Forest plot
+        x_pos = np.arange(len(processed_data))
+        
+        # Create a professional looking CI plot
+        ci_colors = [plt.cm.tab10(i % 10) for i in range(len(processed_data))]
+        
+        # Extract data for CI plot
+        if use_median:
+            stat_values = [d.get('median', 0) for d in processed_data]
+            ci_lower_values = [d.get('median_ci', [0, 0])[0] for d in processed_data]
+            ci_upper_values = [d.get('median_ci', [0, 0])[1] for d in processed_data]
+            title = "Median with 95% CI"
+        else:
+            stat_values = [d.get('mean', 0) for d in processed_data]
+            ci_lower_values = [d.get('mean_ci', [0, 0])[0] for d in processed_data]
+            ci_upper_values = [d.get('mean_ci', [0, 0])[1] for d in processed_data]
+            title = "Mean with 95% CI"
+            
+        # Plot CIs as error bars
+        for i, (stat, ci_lower, ci_upper, color) in enumerate(zip(stat_values, ci_lower_values, ci_upper_values, ci_colors)):
+            # Plot point estimate
+            self.comp_ax_ci.plot([i], [stat], 'o', color=color, markersize=8, zorder=3)
+            
+            # Plot CI as error bar
+            self.comp_ax_ci.plot([i, i], [ci_lower, ci_upper], '-', color=color, linewidth=2, alpha=0.8, zorder=2)
+            
+            # Plot caps at the end of CI
+            cap_width = 0.1
+            self.comp_ax_ci.plot([i-cap_width, i+cap_width], [ci_lower, ci_lower], '-', color=color, linewidth=2, alpha=0.8, zorder=2)
+            self.comp_ax_ci.plot([i-cap_width, i+cap_width], [ci_upper, ci_upper], '-', color=color, linewidth=2, alpha=0.8, zorder=2)
+        
+        # Add a horizontal line at zero if it's within the plot range
+        y_min, y_max = self.comp_ax_ci.get_ylim()
+        if y_min <= 0 <= y_max:
+            self.comp_ax_ci.axhline(y=0, color='gray', linestyle='--', alpha=0.5, zorder=1)
+        
+        # Set x-ticks and labels
+        short_names = []
+        for file_data in processed_data:
+            name = file_data['name']
+            if len(name) > 15:  # Truncate long names
+                short_names.append(name[:12] + "...")
+            else:
+                short_names.append(name)
+                
+        self.comp_ax_ci.set_xticks(x_pos)
+        self.comp_ax_ci.set_xticklabels(short_names, rotation=45, ha='right', fontsize=8)
+        
+        # Set labels and title
+        self.comp_ax_ci.set_ylabel('Value', fontsize=10)
+        self.comp_ax_ci.set_title(title, fontsize=12, fontweight='bold')
+        self.comp_ax_ci.grid(True, axis='y', linestyle='--', alpha=0.3)
+        
+        # Improve CI plot appearance
+        self.comp_ax_ci.spines['top'].set_visible(False)
+        self.comp_ax_ci.spines['right'].set_visible(False)
         
         # Create box plot data
         data_for_boxplot = []
@@ -3339,16 +3460,53 @@ class HexoskinWavApp(tk.Tk):
         
         # Create boxplot with appropriate sizing for the number of groups
         boxplot_width = max(0.3, min(0.8, 0.9 - (len(processed_data) - 2) * 0.05))
-        self.comp_ax2.boxplot(data_for_boxplot, labels=labels_for_boxplot, widths=boxplot_width)
+        
+        # Create a boxplot with appropriate styling
+        boxprops = dict(linewidth=1.5)
+        whiskerprops = dict(linewidth=1.5)
+        capprops = dict(linewidth=1.5)
+        medianprops = dict(linewidth=2, color='black')
+        flierprops = dict(marker='o', markerfacecolor='white', markersize=4, markeredgecolor='gray')
+        
+        # Create a boxplot with colors matched to the time series plot
+        boxplots = self.comp_ax2.boxplot(
+            data_for_boxplot, 
+            labels=labels_for_boxplot, 
+            widths=boxplot_width,
+            patch_artist=True,  # Fill boxes with color
+            boxprops=boxprops,
+            whiskerprops=whiskerprops,
+            capprops=capprops,
+            medianprops=medianprops,
+            flierprops=flierprops,
+            showfliers=True,  # Show outliers
+            notch=True  # Add notches to visualize CI around median
+        )
+        
+        # Color the boxes to match the time series
+        for i, box in enumerate(boxplots['boxes']):
+            box.set_facecolor(plt.cm.tab10(i % 10))
+            box.set_alpha(0.7)
         
         # If many files, rotate labels for better fit
         if len(processed_data) > 5:
-            self.comp_ax2.set_xticklabels(labels_for_boxplot, rotation=45, ha='right')
+            self.comp_ax2.set_xticklabels(labels_for_boxplot, rotation=45, ha='right', fontsize=8)
         
         norm_status = " (Normalized)" if self.normalize_var.get() else ""
-        self.comp_ax2.set_title(f'Distribution Comparison{norm_status}')
-        self.comp_ax2.set_ylabel('Value')
-        self.comp_ax2.grid(True)
+        self.comp_ax2.set_title(f'Distribution Comparison{norm_status}', fontsize=12, fontweight='bold')
+        self.comp_ax2.set_ylabel('Value', fontsize=10)
+        self.comp_ax2.grid(True, axis='y', linestyle='--', alpha=0.3)
+        
+        # Improve the overall appearance for scientific publication
+        for ax in [self.comp_ax1, self.comp_ax_ci, self.comp_ax2]:
+            # Spine styling
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_linewidth(1.0)
+            ax.spines['bottom'].set_linewidth(1.0)
+            
+            # Tick styling
+            ax.tick_params(direction='out', length=4, width=1, colors='black', labelsize=8)
         
         # Update the figure
         self.comparison_figure.tight_layout()
@@ -3360,41 +3518,25 @@ class HexoskinWavApp(tk.Tk):
         self.comparison_canvas_scroll.configure(scrollregion=self.comparison_canvas_scroll.bbox("all"))
         
         # Update progress
-        self.progress_var.set(90)  # 90% progress
+        self.progress_var.set(90)
         self.progress_label.config(text="Running statistical tests...")
         self.update_idletasks()
         
-        # Run the appropriate comparison test
-        if len(self.selected_files_for_comparison) == 2:
-            # For two datasets, use the two-group comparison
-            # self._run_comparison_test()  # Commented out until method is implemented
-            messagebox.showinfo("Information", "The comparison test functionality is not implemented yet.")
+        # Run statistical tests
+        if len(processed_data) == 2:
+            self._run_comparison_test(processed_data)
         else:
-            # For multiple datasets, use the multi-group comparison
             self._run_multi_comparison_test(processed_data)
-        
-        # Finish progress
-        self.progress_var.set(100)
-        self.progress_label.config(text="Comparison complete")
-        
-        # Schedule resetting the progress bar after 2 seconds
-        self.after(2000, lambda: (self.progress_var.set(0), self.progress_label.config(text="")))
     
     def _run_multi_comparison_test(self, processed_data):
         """Run statistical test to compare multiple files"""
         # Get the test type
         test_type = self.test_type_var.get()
         
-        # For multiple groups, we should use appropriate tests
-        if test_type in ['mann_whitney', 'wilcoxon', 'ks_2samp', 't_test', 'welch_t_test']:
-            # If user selected a two-group test, switch to an appropriate multi-group test
-            if test_type in ['t_test', 'welch_t_test']:
-                test_type = 'anova'  # Parametric test for multiple groups
-            else:
-                test_type = 'kruskal'  # Non-parametric test for multiple groups
-            
-            messagebox.showinfo("Information", 
-                               f"Switched to {test_type} test which is appropriate for comparing multiple groups.")
+        # Update progress
+        self.progress_var.set(95)
+        self.progress_label.config(text=f"Running {test_type} test...")
+        self.update_idletasks()
         
         try:
             # Run the comparison
@@ -3432,12 +3574,17 @@ class HexoskinWavApp(tk.Tk):
                     messagebox.showinfo("Error", "The comparison view is not properly initialized")
                     return
             
-            # Header
-            self.comparison_text.insert(tk.END, f"Comparison of {len(processed_data)} Files\n")
+            # Header with a more professional style
+            self.comparison_text.tag_configure("header", font=('Segoe UI', 12, 'bold'))
+            self.comparison_text.tag_configure("section", font=('Segoe UI', 11, 'bold'))
+            self.comparison_text.tag_configure("subsection", font=('Segoe UI', 10, 'bold'))
+            self.comparison_text.tag_configure("important", font=('Segoe UI', 10, 'bold'))
+            
+            self.comparison_text.insert(tk.END, f"Comparison of {len(processed_data)} Files\n", "header")
             self.comparison_text.insert(tk.END, "=" * 50 + "\n\n")
             
             # Preprocessing information
-            self.comparison_text.insert(tk.END, "PREPROCESSING\n")
+            self.comparison_text.insert(tk.END, "PREPROCESSING\n", "section")
             self.comparison_text.insert(tk.END, "-" * 50 + "\n")
             
             if self.align_var.get() and len(processed_data) == 2:
@@ -3457,28 +3604,38 @@ class HexoskinWavApp(tk.Tk):
             self.comparison_text.insert(tk.END, "\n")
             
             # Test information
-            self.comparison_text.insert(tk.END, "TEST INFORMATION\n")
+            self.comparison_text.insert(tk.END, "TEST INFORMATION\n", "section")
             self.comparison_text.insert(tk.END, "-" * 50 + "\n")
             self.comparison_text.insert(tk.END, f"Test: {result['test_name']}\n")
             self.comparison_text.insert(tk.END, f"{result['test_description']}\n")
             self.comparison_text.insert(tk.END, f"Null hypothesis: {result['null_hypothesis']}\n\n")
             
             # Test results
-            self.comparison_text.insert(tk.END, "TEST RESULTS\n")
+            self.comparison_text.insert(tk.END, "TEST RESULTS\n", "section")
             self.comparison_text.insert(tk.END, "-" * 50 + "\n")
+            
+            # Format p-value with more precision if very small
+            p_value_str = f"{result['p_value']:.6f}"
+            if result['p_value'] < 0.001:
+                p_value_str = "< 0.001"
+            
             self.comparison_text.insert(tk.END, f"Statistic: {result['statistic']:.6f}\n")
-            self.comparison_text.insert(tk.END, f"p-value: {result['p_value']:.6f}\n")
+            self.comparison_text.insert(tk.END, f"p-value: {p_value_str}\n")
             self.comparison_text.insert(tk.END, f"Alpha: {result['alpha']}\n")
-            self.comparison_text.insert(tk.END, f"Reject null hypothesis: {'Yes' if result['reject_null'] else 'No'}\n\n")
+            
+            # Highlight the null hypothesis result
+            reject_text = "Yes" if result['reject_null'] else "No"
+            self.comparison_text.insert(tk.END, f"Reject null hypothesis: ")
+            self.comparison_text.insert(tk.END, f"{reject_text}\n\n", "important")
             
             # Effect size
-            self.comparison_text.insert(tk.END, "EFFECT SIZE\n")
+            self.comparison_text.insert(tk.END, "EFFECT SIZE\n", "section")
             self.comparison_text.insert(tk.END, "-" * 50 + "\n")
             self.comparison_text.insert(tk.END, f"{result['effect_size_name']}: {result['effect_size']:.6f}\n")
             self.comparison_text.insert(tk.END, f"Interpretation: {result['effect_interpretation']}\n\n")
             
             # Descriptive statistics
-            self.comparison_text.insert(tk.END, "DESCRIPTIVE STATISTICS\n")
+            self.comparison_text.insert(tk.END, "DESCRIPTIVE STATISTICS\n", "section")
             self.comparison_text.insert(tk.END, "-" * 50 + "\n")
             
             # Create a table-like format for multiple files
@@ -3513,10 +3670,26 @@ class HexoskinWavApp(tk.Tk):
                     row += f" {value:{format_str}:>{col_width}}"
                 self.comparison_text.insert(tk.END, row + "\n")
             
+            # Add 95% CI for means if available
+            if 'mean_cis' in desc_stats:
+                row = f"{'95% CI Mean':15}"
+                for i in range(num_files):
+                    ci = desc_stats['mean_cis'][i]
+                    row += f" [{ci[0]:.2f}, {ci[1]:.2f}]:>{col_width}"
+                self.comparison_text.insert(tk.END, row + "\n")
+            
+            # Add 95% CI for medians if available
+            if 'median_cis' in desc_stats:
+                row = f"{'95% CI Median':15}"
+                for i in range(num_files):
+                    ci = desc_stats['median_cis'][i]
+                    row += f" [{ci[0]:.2f}, {ci[1]:.2f}]:>{col_width}"
+                self.comparison_text.insert(tk.END, row + "\n")
+            
             self.comparison_text.insert(tk.END, "\n")
             
             # Interpretation
-            self.comparison_text.insert(tk.END, "INTERPRETATION\n")
+            self.comparison_text.insert(tk.END, "INTERPRETATION\n", "section")
             self.comparison_text.insert(tk.END, "-" * 50 + "\n")
             self.comparison_text.insert(tk.END, f"{result['interpretation']}\n")
             
@@ -3525,16 +3698,16 @@ class HexoskinWavApp(tk.Tk):
                 if 'post_hoc_results' in result and result['post_hoc_results']:
                     post_hoc = result['post_hoc_results']
                 
-                    self.comparison_text.insert(tk.END, "\nPOST-HOC ANALYSIS\n")
+                    self.comparison_text.insert(tk.END, "\nPOST-HOC ANALYSIS\n", "section")
                     self.comparison_text.insert(tk.END, "-" * 50 + "\n")
                 
                     # Display test information
-                    self.comparison_text.insert(tk.END, f"Test: {post_hoc['test']}\n")
+                    self.comparison_text.insert(tk.END, f"Test: {post_hoc['test']}\n", "subsection")
                     self.comparison_text.insert(tk.END, f"Description: {post_hoc['description']}\n\n")
                     
                     # Display pairwise comparisons in a table format
                     if 'pairwise_p_values' in post_hoc:
-                        self.comparison_text.insert(tk.END, "Pairwise Comparisons:\n")
+                        self.comparison_text.insert(tk.END, "Pairwise Comparisons:\n", "subsection")
                         
                         # Calculate column widths for table
                         group_width = max(15, max(len(pair['group1']) for pair in post_hoc['pairwise_p_values']))
@@ -3542,7 +3715,7 @@ class HexoskinWavApp(tk.Tk):
                         
                         # Create header
                         header = f"{'Group 1':{group_width}} {'Group 2':{group_width}} {'p-value':10} {'Adj. p-value':12} {'Effect Size':12} {'Significant':10}\n"
-                        self.comparison_text.insert(tk.END, header)
+                        self.comparison_text.insert(tk.END, header, "subsection")
                         self.comparison_text.insert(tk.END, "-" * (group_width * 2 + 44) + "\n")
                         
                         # Add rows
@@ -3551,25 +3724,49 @@ class HexoskinWavApp(tk.Tk):
                             p_adj = pair.get('p_value_adjusted', p_val)  # Use original p-value if no adjustment
                             effect = pair.get('effect_size', '')
                             
+                            # Apply APA style formatting for p-values
+                            if p_val < 0.001:
+                                p_val_str = "< .001"
+                            else:
+                                p_val_str = f"{p_val:.3f}".lstrip('0')
+                                
+                            if p_adj < 0.001:
+                                p_adj_str = "< .001"
+                            else:
+                                p_adj_str = f"{p_adj:.3f}".lstrip('0')
+                            
+                            # Highlight significant results
+                            is_significant = pair.get('significant', False)
+                            
                             row = (f"{pair['group1']:{group_width}} "
                                   f"{pair['group2']:{group_width}} "
-                                  f"{p_val:10.4f} "
-                                  f"{p_adj:12.4f} "
-                                  f"{effect:12.4f} "
-                                  f"{'Yes' if pair['significant'] else 'No':10}\n")
-                            self.comparison_text.insert(tk.END, row)
+                                  f"{p_val_str:>10} "
+                                  f"{p_adj_str:>12} ")
+                                  
+                            if isinstance(effect, (int, float)):
+                                row += f"{effect:12.4f} "
+                            else:
+                                row += f"{'N/A':>12} "
+                                
+                            row += f"{'Yes' if is_significant else 'No':10}\n"
+                            
+                            # Insert with highlighting for significant results
+                            if is_significant:
+                                self.comparison_text.insert(tk.END, row, "important")
+                            else:
+                                self.comparison_text.insert(tk.END, row)
                         
                         self.comparison_text.insert(tk.END, "\n")
                         
                         # Display FDR results if available
                         if 'fdr_significant_pairs' in post_hoc:
-                            self.comparison_text.insert(tk.END, "FDR-Corrected Results:\n")
+                            self.comparison_text.insert(tk.END, "FDR-Corrected Results:\n", "subsection")
                             self.comparison_text.insert(tk.END, f"Number of significant pairs after FDR correction: {len(post_hoc['fdr_significant_pairs'])}\n\n")
                     
                     # Display multiple testing correction information
                     if 'multiple_testing_correction' in post_hoc:
                         mtc = post_hoc['multiple_testing_correction']
-                        self.comparison_text.insert(tk.END, "Multiple Testing Correction:\n")
+                        self.comparison_text.insert(tk.END, "Multiple Testing Correction:\n", "subsection")
                         self.comparison_text.insert(tk.END, f"Method: {mtc['method']}\n")
                         self.comparison_text.insert(tk.END, f"Description: {mtc['description']}\n")
                         if 'fdr_method' in mtc:
@@ -3577,10 +3774,17 @@ class HexoskinWavApp(tk.Tk):
                         self.comparison_text.insert(tk.END, "\n")
                     
                     # Display effect size interpretation if available
-                    if any('effect_size_type' in pair for pair in post_hoc['pairwise_p_values']):
-                        self.comparison_text.insert(tk.END, "Effect Size Interpretation:\n")
+                    if any('effect_size' in pair for pair in post_hoc.get('pairwise_p_values', [])):
+                        self.comparison_text.insert(tk.END, "Effect Size Interpretation:\n", "subsection")
+                        
                         for pair in post_hoc['pairwise_p_values']:
                             if 'effect_size' in pair and 'effect_size_type' in pair:
+                                # Get effect size interpretation
+                                effect_size = pair.get('effect_size', 0)
+                                effect_type = pair.get('effect_size_type', '')
+                                
+                                # Standard interpretation based on effect size type
+                                interpretation = ""
                                 effect_size = abs(pair['effect_size'])
                                 interpretation = ""
                                 if pair['effect_size_type'] == "Cohen's d" or pair['effect_size_type'] == "Hedges' g":
