@@ -9,7 +9,8 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 import matplotlib.pyplot as plt
-from scipy import stats, signal
+import scipy
+from scipy import stats, signal, interpolate
 import warnings
 import csv
 from datetime import datetime, timedelta
@@ -210,10 +211,30 @@ class HexoskinWavLoader:
         # Run normality tests
         normality_tests = self.test_normality()
         
-        # Find mode
-        mode_result = stats.mode(data_values)
-        mode_value = mode_result.mode[0]
-        mode_count = mode_result.count[0]
+        # Find mode - handle both SciPy 1.x and 1.7+ return values
+        try:
+            # Check if mode_result.mode is a scalar or array-like
+            mode_result = stats.mode(data_values)
+            
+            # Handle both old and new SciPy versions
+            if hasattr(mode_result, 'mode'):
+                if np.isscalar(mode_result.mode):
+                    mode_value = mode_result.mode
+                    mode_count = mode_result.count
+                else:
+                    mode_value = mode_result.mode[0]
+                    mode_count = mode_result.count[0]
+            else:
+                # For newer versions where mode_result is a tuple (mode, count)
+                mode_value = mode_result[0]
+                mode_count = mode_result[1]
+        except Exception as e:
+            # Fallback method if stats.mode fails
+            print(f"Error calculating mode: {e}")
+            unique_values, counts = np.unique(data_values, return_counts=True)
+            mode_idx = np.argmax(counts)
+            mode_value = unique_values[mode_idx]
+            mode_count = counts[mode_idx]
         
         # Combine all statistics
         return {
@@ -293,14 +314,14 @@ class HexoskinWavLoader:
         time_points = np.arange(start_time, end_time, 1/target_hz)
         
         # Interpolate both datasets to the new time points
-        interp_func1 = scipy.interpolate.interp1d(
+        interp_func1 = interpolate.interp1d(
             dataset1['timestamp'], 
             dataset1['value'],
             bounds_error=False,
             fill_value="extrapolate"
         )
         
-        interp_func2 = scipy.interpolate.interp1d(
+        interp_func2 = interpolate.interp1d(
             dataset2['timestamp'], 
             dataset2['value'],
             bounds_error=False,
@@ -435,7 +456,7 @@ class HexoskinWavLoader:
         desc1 = {
             'mean': np.mean(data1),
             'median': np.median(data1),
-            'std': np.std(data1),
+            'std': np.std(data1, ddof=1),  # Using n-1 for sample standard deviation
             'min': np.min(data1),
             'max': np.max(data1),
             'count': len(data1)
@@ -444,19 +465,37 @@ class HexoskinWavLoader:
         desc2 = {
             'mean': np.mean(data2),
             'median': np.median(data2),
-            'std': np.std(data2),
+            'std': np.std(data2, ddof=1),  # Using n-1 for sample standard deviation
             'min': np.min(data2),
             'max': np.max(data2),
             'count': len(data2)
         }
         
         # Perform statistical test
+        alpha = 0.05
+        ci_level = 0.95
+        
         if test_type == 'mann_whitney':
             # Mann-Whitney U test
             statistic, p_value = stats.mannwhitneyu(data1, data2, alternative='two-sided')
             test_name = "Mann-Whitney U test"
             test_description = "Non-parametric test to determine if two independent samples are drawn from the same distribution"
             null_hypothesis = "The distributions of both samples are equal"
+            
+            # Compute approximate confidence interval using bootstrap
+            n_bootstrap = 1000
+            bootstrap_differences = []
+            
+            for _ in range(n_bootstrap):
+                sample1 = np.random.choice(data1, size=len(data1), replace=True)
+                sample2 = np.random.choice(data2, size=len(data2), replace=True)
+                bootstrap_differences.append(np.median(sample1) - np.median(sample2))
+                
+            ci_lower = np.percentile(bootstrap_differences, 2.5)
+            ci_upper = np.percentile(bootstrap_differences, 97.5)
+            
+            # Degrees of freedom
+            df = len(data1) + len(data2) - 2
             
         elif test_type == 'wilcoxon':
             # Wilcoxon signed-rank test
@@ -465,12 +504,27 @@ class HexoskinWavLoader:
             test_description = "Non-parametric test for paired samples to determine if the differences come from a distribution with zero median"
             null_hypothesis = "The differences between paired samples have zero median"
             
+            # Compute confidence interval for median difference
+            differences = data1 - data2
+            ci_lower = np.percentile(differences, 2.5)
+            ci_upper = np.percentile(differences, 97.5)
+            
+            # Degrees of freedom
+            df = len(differences) - 1
+            
         elif test_type == 'ks_2samp':
             # Two-sample Kolmogorov-Smirnov test
             statistic, p_value = stats.ks_2samp(data1, data2)
             test_name = "Two-sample Kolmogorov-Smirnov test"
             test_description = "Non-parametric test to determine if two independent samples are drawn from the same continuous distribution"
             null_hypothesis = "The two samples come from the same distribution"
+            
+            # For KS test, CI is typically not provided, but we can report the statistic range
+            ci_lower = 0
+            ci_upper = 1
+            
+            # Degrees of freedom
+            df = len(data1) + len(data2) - 2
             
         elif test_type == 't_test':
             # Independent t-test
@@ -479,18 +533,57 @@ class HexoskinWavLoader:
             test_description = "Parametric test to determine if two independent samples have different means"
             null_hypothesis = "The means of the two samples are equal"
             
+            # Compute confidence interval for mean difference
+            mean_diff = np.mean(data1) - np.mean(data2)
+            
+            # Pooled standard deviation
+            n1, n2 = len(data1), len(data2)
+            s1, s2 = np.var(data1, ddof=1), np.var(data2, ddof=1)
+            pooled_var = ((n1-1)*s1 + (n2-1)*s2) / (n1+n2-2)
+            pooled_std = np.sqrt(pooled_var)
+            
+            # Standard error of difference between means
+            se_diff = pooled_std * np.sqrt(1/n1 + 1/n2)
+            
+            # Critical t-value
+            df = n1 + n2 - 2
+            t_crit = stats.t.ppf(1 - alpha/2, df)
+            
+            # Confidence interval
+            ci_lower = mean_diff - t_crit * se_diff
+            ci_upper = mean_diff + t_crit * se_diff
+            
         elif test_type == 'welch_t_test':
             # Welch's t-test
             statistic, p_value = stats.ttest_ind(data1, data2, equal_var=False)
             test_name = "Welch's t-test"
             test_description = "Parametric test to determine if two independent samples have different means (not assuming equal variances)"
             null_hypothesis = "The means of the two samples are equal"
+            
+            # Compute confidence interval for mean difference
+            mean_diff = np.mean(data1) - np.mean(data2)
+            
+            # Standard deviation and sample size
+            n1, n2 = len(data1), len(data2)
+            s1, s2 = np.var(data1, ddof=1), np.var(data2, ddof=1)
+            
+            # Standard error of difference between means
+            se_diff = np.sqrt(s1/n1 + s2/n2)
+            
+            # Welch-Satterthwaite degrees of freedom
+            df = (s1/n1 + s2/n2)**2 / ((s1/n1)**2/(n1-1) + (s2/n2)**2/(n2-1))
+            
+            # Critical t-value
+            t_crit = stats.t.ppf(1 - alpha/2, df)
+            
+            # Confidence interval
+            ci_lower = mean_diff - t_crit * se_diff
+            ci_upper = mean_diff + t_crit * se_diff
         
         else:
             raise ValueError(f"Unknown test type: {test_type}")
         
         # Determine if null hypothesis should be rejected
-        alpha = 0.05
         reject_null = p_value < alpha
         
         # Calculate effect size
@@ -510,14 +603,8 @@ class HexoskinWavLoader:
             # KS statistic is already an effect size measure
             effect_size = statistic
             effect_size_name = "D statistic"
-        elif test_type == 't_test':
+        elif test_type in ['t_test', 'welch_t_test']:
             # Calculate Cohen's d (effect size for t-test)
-            mean_diff = np.mean(data1) - np.mean(data2)
-            pooled_std = np.sqrt((np.std(data1, ddof=1)**2 + np.std(data2, ddof=1)**2) / 2)
-            effect_size = mean_diff / pooled_std
-            effect_size_name = "Cohen's d"
-        elif test_type == 'welch_t_test':
-            # Calculate Cohen's d (effect size for Welch's t-test)
             mean_diff = np.mean(data1) - np.mean(data2)
             pooled_std = np.sqrt((np.std(data1, ddof=1)**2 + np.std(data2, ddof=1)**2) / 2)
             effect_size = mean_diff / pooled_std
@@ -530,6 +617,39 @@ class HexoskinWavLoader:
             effect_interpretation = "Medium effect"
         else:
             effect_interpretation = "Large effect"
+        
+        # Create scientific report format
+        if test_type == 'mann_whitney':
+            report = f"Mann-Whitney U({df}) = {statistic:.2f}, p = {p_value:.3f}, 95% CI [{ci_lower:.2f}, {ci_upper:.2f}]"
+            if p_value < 0.001:
+                report = f"Mann-Whitney U({df}) = {statistic:.2f}, p < 0.001, 95% CI [{ci_lower:.2f}, {ci_upper:.2f}]"
+        elif test_type == 'wilcoxon':
+            report = f"Wilcoxon W({df}) = {statistic:.2f}, p = {p_value:.3f}, 95% CI [{ci_lower:.2f}, {ci_upper:.2f}]"
+            if p_value < 0.001:
+                report = f"Wilcoxon W({df}) = {statistic:.2f}, p < 0.001, 95% CI [{ci_lower:.2f}, {ci_upper:.2f}]"
+        elif test_type == 'ks_2samp':
+            report = f"Kolmogorov-Smirnov D({df}) = {statistic:.2f}, p = {p_value:.3f}"
+            if p_value < 0.001:
+                report = f"Kolmogorov-Smirnov D({df}) = {statistic:.2f}, p < 0.001"
+        elif test_type in ['t_test', 'welch_t_test']:
+            if test_type == 't_test':
+                test_name_display = "t"
+            else:
+                test_name_display = "Welch's t"
+            report = f"{test_name_display}({df:.1f}) = {statistic:.2f}, p = {p_value:.3f}, 95% CI [{ci_lower:.2f}, {ci_upper:.2f}]"
+            if p_value < 0.001:
+                report = f"{test_name_display}({df:.1f}) = {statistic:.2f}, p < 0.001, 95% CI [{ci_lower:.2f}, {ci_upper:.2f}]"
+        
+        # Interpret the effect
+        if reject_null:
+            if test_type in ['t_test', 'welch_t_test']:
+                mean_diff = np.mean(data1) - np.mean(data2)
+                direction = "higher" if mean_diff > 0 else "lower"
+                interpretation = f"The results demonstrate a statistically significant difference between the two datasets. The first dataset shows {direction} values than the second dataset ({report}). {effect_interpretation} observed ({effect_size_name} = {effect_size:.2f})."
+            else:
+                interpretation = f"The results demonstrate a statistically significant difference between the two datasets ({report}). {effect_interpretation} observed ({effect_size_name} = {effect_size:.2f})."
+        else:
+            interpretation = f"The results do not demonstrate a statistically significant difference between the two datasets ({report}). {effect_interpretation} observed ({effect_size_name} = {effect_size:.2f})."
         
         # Perform post-hoc analysis if the result is significant
         post_hoc_results = None
@@ -553,8 +673,11 @@ class HexoskinWavLoader:
             'effect_interpretation': effect_interpretation,
             'descriptive_stats_1': desc1,
             'descriptive_stats_2': desc2,
-            'interpretation': f"There is{'' if reject_null else ' not'} a statistically significant difference "
-                            + f"between the two datasets ({test_name}, p = {p_value:.4f}).",
+            'ci_lower': ci_lower,
+            'ci_upper': ci_upper,
+            'df': df,
+            'scientific_report': report,
+            'interpretation': interpretation,
             'test_switch_message': test_switch_message,
             'post_hoc_results': post_hoc_results
         }
@@ -1124,6 +1247,9 @@ class HexoskinWavLoader:
             
         if len(datasets) < 2:
             return {"error": "At least 2 datasets are required for comparison"}
+            
+        # Initialize post-hoc results to None
+        post_hoc_results = None
         
         # Extract data values from datasets
         data_values = []
@@ -1238,7 +1364,7 @@ class HexoskinWavLoader:
                 
                 # Automatically run post-hoc tests if result is significant
                 if p_value < 0.05:
-                    posthoc_results = HexoskinWavLoader._run_posthoc_tests(
+                    post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
                         data_values, data_names, 'anova', alpha=0.05
                     )
                     
@@ -1292,7 +1418,7 @@ class HexoskinWavLoader:
                 
                 # Post-hoc tests
                 if p_value < 0.05:
-                    posthoc_results = HexoskinWavLoader._run_posthoc_tests(
+                    post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
                         data_values, data_names, 'welch_anova', alpha=0.05
                     )
                     
@@ -1314,7 +1440,7 @@ class HexoskinWavLoader:
                 
                 # Post-hoc tests
                 if p_value < 0.05:
-                    posthoc_results = HexoskinWavLoader._run_posthoc_tests(
+                    post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
                         data_values, data_names, 'kruskal', alpha=0.05
                     )
                     
@@ -1348,7 +1474,7 @@ class HexoskinWavLoader:
                 
                 # Post-hoc tests
                 if p_value < 0.05:
-                    posthoc_results = HexoskinWavLoader._run_posthoc_tests(
+                    post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
                         data_values, data_names, 'friedman', alpha=0.05, n_blocks=n
                     )
                     
@@ -1417,7 +1543,7 @@ class HexoskinWavLoader:
                 
                 # Post-hoc tests
                 if p_value < 0.05:
-                    posthoc_results = HexoskinWavLoader._run_posthoc_tests(
+                    post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
                         data_values, data_names, 'rm_anova', alpha=0.05
                     )
                     
@@ -1497,7 +1623,7 @@ class HexoskinWavLoader:
                 
                 # Post-hoc tests
                 if p_value < 0.05:
-                    posthoc_results = HexoskinWavLoader._run_posthoc_tests(
+                    post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
                         data_values, data_names, 'aligned_ranks', alpha=0.05
                     )
                     
@@ -1540,10 +1666,10 @@ class HexoskinWavLoader:
                 
         # Generate summary interpretation
         if reject_null:
-            if posthoc_results and 'significant_pairs' in posthoc_results and posthoc_results['significant_pairs']:
-                sig_pairs_text = ", ".join([f"{p[0]} vs {p[1]}" for p in posthoc_results['significant_pairs'][:3]])
-                if len(posthoc_results['significant_pairs']) > 3:
-                    sig_pairs_text += f", and {len(posthoc_results['significant_pairs']) - 3} more"
+            if post_hoc_results and 'significant_pairs' in post_hoc_results and post_hoc_results['significant_pairs']:
+                sig_pairs_text = ", ".join([f"{p[0]} vs {p[1]}" for p in post_hoc_results['significant_pairs'][:3]])
+                if len(post_hoc_results['significant_pairs']) > 3:
+                    sig_pairs_text += f", and {len(post_hoc_results['significant_pairs']) - 3} more"
                     
                 interpretation = (f"There is a statistically significant difference among the datasets "
                                 f"({test_name}, p = {p_value:.4f}, {effect_size_name} = {effect_size:.3f}). "
@@ -1582,7 +1708,7 @@ class HexoskinWavLoader:
                 'mins': data_mins,
                 'maxs': data_maxs
             },
-            'posthoc_results': posthoc_results,
+            'post_hoc_results': post_hoc_results,
             'interpretation': interpretation
         }
 
@@ -1610,42 +1736,79 @@ class HexoskinWavLoader:
         # ANOVA post-hoc: Tukey's HSD
         if test_type == 'anova':
             try:
-                # Tukey's HSD test
-                from scipy.stats import tukey_hsd
+                # Try to import tukey_hsd (SciPy 1.7+)
+                try:
+                    from scipy.stats import tukey_hsd
+                    has_tukey_hsd = True
+                except ImportError:
+                    has_tukey_hsd = False
                 
-                # Run Tukey's HSD
-                posthoc = tukey_hsd(*data_values)
+                if has_tukey_hsd:
+                    # SciPy 1.7+ way - use the built-in tukey_hsd function
+                    posthoc = tukey_hsd(*data_values)
                 
-                posthoc_results = {
-                    'test': 'Tukey HSD',
-                    'description': 'Post-hoc test for pairwise comparisons after significant ANOVA',
-                    'pairwise_p_values': [],
-                    'significant_pairs': []
-                }
+                    posthoc_results = {
+                        'test': 'Tukey HSD',
+                        'description': 'Post-hoc test for pairwise comparisons after significant ANOVA',
+                        'pairwise_p_values': [],
+                        'significant_pairs': []
+                    }
                 
-                # Create pairwise comparisons
-                for i in range(len(data_values)):
-                    for j in range(i+1, len(data_values)):
-                        p_val = posthoc.pvalue[i, j]
-                        mean_diff = np.mean(data_values[i]) - np.mean(data_values[j])
+                    # Create pairwise comparisons
+                    num_comparisons = len(data_values) * (len(data_values) - 1) // 2
+                    
+                    for i in range(len(data_values)):
+                        for j in range(i+1, len(data_values)):
+                            # Get rejection status from the results
+                            p_val = float(posthoc.pvalue[i, j])
                         
-                        # Calculate Cohen's d effect size
-                        pooled_std = np.sqrt((np.std(data_values[i], ddof=1)**2 + np.std(data_values[j], ddof=1)**2) / 2)
-                        cohens_d = mean_diff / pooled_std if pooled_std > 0 else 0
+                            # Add to pairwise results
+                            posthoc_results['pairwise_p_values'].append({
+                                'group1': data_names[i],
+                                'group2': data_names[j],
+                                'p_value': p_val,
+                                'significant': p_val < alpha
+                            })
                         
-                        posthoc_results['pairwise_p_values'].append({
-                            'group1': data_names[i],
-                            'group2': data_names[j],
-                            'p_value': p_val,
-                            'significant': p_val < alpha,
-                            'mean_diff': mean_diff,
-                            'effect_size': cohens_d,
-                            'effect_size_type': "Cohen's d"
-                        })
-                        
-                        if p_val < alpha:
-                            posthoc_results['significant_pairs'].append(
-                                (data_names[i], data_names[j], p_val)
+                            # Add to significant pairs if significant
+                            if p_val < alpha:
+                                posthoc_results['significant_pairs'].append(
+                                    (data_names[i], data_names[j], p_val)
+                                )
+                else:
+                    # For older SciPy versions, use pairwise t-tests with Bonferroni correction
+                    posthoc_results = {
+                        'test': 'Pairwise t-tests with Bonferroni correction',
+                        'description': 'Post-hoc test for pairwise comparisons after significant ANOVA',
+                        'pairwise_p_values': [],
+                        'significant_pairs': []
+                    }
+                    
+                    # Number of comparisons (for Bonferroni correction)
+                    num_comparisons = len(data_values) * (len(data_values) - 1) // 2
+                    
+                    # Perform pairwise t-tests
+                    for i in range(len(data_values)):
+                        for j in range(i+1, len(data_values)):
+                            # t-test between groups i and j
+                            stat, p_val = stats.ttest_ind(data_values[i], data_values[j], equal_var=True)
+                            
+                            # Apply Bonferroni correction
+                            p_val_adj = min(p_val * num_comparisons, 1.0)
+                            
+                            # Add to pairwise results
+                            posthoc_results['pairwise_p_values'].append({
+                                'group1': data_names[i],
+                                'group2': data_names[j],
+                                'p_value': p_val,
+                                'p_value_adjusted': p_val_adj,
+                                'significant': p_val_adj < alpha
+                            })
+                            
+                            # Add to significant pairs if significant
+                            if p_val_adj < alpha:
+                                posthoc_results['significant_pairs'].append(
+                                    (data_names[i], data_names[j], p_val_adj)
                             )
             except Exception as e:
                 posthoc_results = {
@@ -2140,7 +2303,7 @@ class HexoskinWavApp(tk.Tk):
         
         ttk.Label(header_frame, text="Hexoskin WAV Analyzer", 
                 font=('Segoe UI', 14, 'bold')).pack(side=tk.TOP)
-        ttk.Label(header_frame, text="Version 0.0.2", 
+        ttk.Label(header_frame, text="Version 0.0.3", 
                 font=('Segoe UI', 9)).pack(side=tk.TOP)
         
         # File operations section
@@ -2205,6 +2368,11 @@ class HexoskinWavApp(tk.Tk):
         compare_btn = ttk.Button(files_frame, text="Compare Selected Files", 
                                command=lambda: self._compare_selected_files())
         compare_btn.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Statistics button for a single file
+        stats_btn = ttk.Button(files_frame, text="Show Statistics", 
+                             command=lambda: self._show_statistics())
+        stats_btn.pack(fill=tk.X, padx=5, pady=5)
         
         # Unload button for selected files
         unload_btn = ttk.Button(files_frame, text="Unload Selected Files", 
@@ -2347,12 +2515,12 @@ class HexoskinWavApp(tk.Tk):
         metadata_scrollbar.config(command=self.metadata_text.yview)
         
         # ---------- Right Panel Components ----------
-        right_notebook = ttk.Notebook(right_frame)
-        right_notebook.pack(fill=tk.BOTH, expand=True)
+        self.right_notebook = ttk.Notebook(right_frame)
+        self.right_notebook.pack(fill=tk.BOTH, expand=True)
         
         # Plot tab
-        plot_frame = ttk.Frame(right_notebook)
-        right_notebook.add(plot_frame, text="Plot")
+        plot_frame = ttk.Frame(self.right_notebook)
+        self.right_notebook.add(plot_frame, text="Plot")
         
         # Create figure and canvas for matplotlib with improved styling
         plt.style.use('seaborn-v0_8-whitegrid')  # Modern style for plots
@@ -2375,237 +2543,189 @@ class HexoskinWavApp(tk.Tk):
         self.plot_ax.set_ylabel("Value")
         self.plot_canvas.draw()
         
-        # Statistics tab
-        self.stats_frame = ttk.Frame(right_notebook)
-        right_notebook.add(self.stats_frame, text="Statistics")
-        
-        # Add scrollbar to stats text
-        stats_text_frame = ttk.Frame(self.stats_frame)
-        stats_text_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        stats_scrollbar = ttk.Scrollbar(stats_text_frame)
-        stats_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        self.stats_text = tk.Text(stats_text_frame, font=('Consolas', 10), wrap=tk.WORD)
-        self.stats_text.pack(fill=tk.BOTH, expand=True)
-        self.stats_text.config(yscrollcommand=stats_scrollbar.set)
-        stats_scrollbar.config(command=self.stats_text.yview)
-        
         # Comparison tab
-        self.comparison_frame = ttk.Frame(right_notebook)
-        right_notebook.add(self.comparison_frame, text="Comparison")
+        comparison_frame = ttk.Frame(self.right_notebook)
+        self.right_notebook.add(comparison_frame, text="Comparison")
         
-        # Create PanedWindow for comparison tab
-        comparison_paned = ttk.PanedWindow(self.comparison_frame, orient=tk.VERTICAL)
+        # Create a PanedWindow for comparison tab
+        comparison_paned = ttk.PanedWindow(comparison_frame, orient=tk.VERTICAL)
         comparison_paned.pack(fill=tk.BOTH, expand=True)
         
-        # Create scrollable comparison plot frame
-        comparison_plot_frame = ttk.Frame(comparison_paned)
+        # Upper frame for controls
+        upper_frame = ttk.Frame(comparison_paned)
+        comparison_paned.add(upper_frame, weight=1)
         
-        # Add vertical scrollbar to plot area
-        comparison_scroll_frame = ttk.Frame(comparison_plot_frame)
-        comparison_scroll_frame.pack(fill=tk.BOTH, expand=True)
+        # Test selection frame
+        test_frame = ttk.LabelFrame(upper_frame, text="Statistical Test")
+        test_frame.pack(fill=tk.X, padx=5, pady=5)
         
-        self.comparison_canvas_scroll = tk.Canvas(comparison_scroll_frame)
-        self.comparison_scrollbar = ttk.Scrollbar(comparison_scroll_frame, orient=tk.VERTICAL, 
+        # Test type selection
+        test_type_frame = ttk.Frame(test_frame)
+        test_type_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(test_type_frame, text="Test Type:").pack(side=tk.LEFT)
+        self.test_type_var = tk.StringVar(value="mann_whitney")
+        test_type_combo = ttk.Combobox(test_type_frame, textvariable=self.test_type_var, width=20, state="readonly")
+        test_type_combo['values'] = (
+            'mann_whitney',      # Non-parametric test for independent samples
+            'wilcoxon',         # Non-parametric test for paired samples
+            'ks_2samp',         # Two-sample Kolmogorov-Smirnov test
+            't_test',           # Independent t-test
+            'welch_t_test',     # Welch's t-test for unequal variances
+            'anova',            # One-way ANOVA
+            'kruskal',          # Kruskal-Wallis H-test
+            'friedman'          # Friedman test
+        )
+        test_type_combo.pack(side=tk.LEFT, padx=5)
+        
+        # Test suggestion assistant button
+        suggest_btn = ttk.Button(test_type_frame, text="Test Suggestion Assistant", 
+                               command=lambda: self._suggest_test())
+        suggest_btn.pack(side=tk.LEFT, padx=5)
+
+        # Comparison plots section
+        plots_frame = ttk.LabelFrame(upper_frame, text="Comparison Plots")
+        plots_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        # Scrollable plot area
+        plot_scroll = ttk.Frame(plots_frame)
+        plot_scroll.pack(fill=tk.BOTH, expand=True)
+
+        self.comparison_canvas_scroll = tk.Canvas(plot_scroll)
+        self.comparison_scrollbar = ttk.Scrollbar(plot_scroll, orient=tk.VERTICAL, 
                                                  command=self.comparison_canvas_scroll.yview)
         self.comparison_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.comparison_canvas_scroll.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.comparison_canvas_scroll.configure(yscrollcommand=self.comparison_scrollbar.set)
         
-        # Create inner frame for the plot
+        # Plot container
         self.comparison_inner_frame = ttk.Frame(self.comparison_canvas_scroll)
         self.comparison_canvas_window = self.comparison_canvas_scroll.create_window(
             (0, 0), window=self.comparison_inner_frame, anchor="nw", tags="inner_frame"
         )
         
-        # Bind events for proper scrolling
+        # Bind scroll events
         self.comparison_inner_frame.bind("<Configure>", self._configure_comparison_scroll_region)
         self.comparison_canvas_scroll.bind("<Configure>", self._configure_comparison_canvas)
         
-        # Create figure and canvas for comparison plots
+        # Matplotlib figure
         self.comparison_figure = Figure(figsize=(5, 8), dpi=100, constrained_layout=True)
-        self.comparison_figure.patch.set_facecolor('#F8F8F8')  # Light background
+        self.comparison_figure.patch.set_facecolor('#F8F8F8')
         
         self.comparison_canvas_widget = FigureCanvasTkAgg(self.comparison_figure, self.comparison_inner_frame)
         self.comparison_canvas_widget.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         
-        # Add view control buttons frame
-        comp_view_controls = ttk.Frame(comparison_plot_frame)
-        comp_view_controls.pack(fill=tk.X, padx=5, pady=5)
-        
-        # Add reset view button
-        comp_reset_view_btn = ttk.Button(comp_view_controls, text="Reset View/Scrollbar", 
+        # Plot controls
+        controls_frame = ttk.Frame(plots_frame)
+        controls_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        reset_view_btn = ttk.Button(controls_frame, text="Reset View/Scrollbar", 
                                       command=lambda: self._fit_comparison_to_window())
-        comp_reset_view_btn.pack(side=tk.LEFT, padx=5)
-        
-        # Add toolbar for comparison matplotlib
-        comp_toolbar_frame = ttk.Frame(comparison_plot_frame)
-        comp_toolbar_frame.pack(fill=tk.X)
-        self.comp_toolbar = NavigationToolbar2Tk(self.comparison_canvas_widget, comp_toolbar_frame)
+        reset_view_btn.pack(side=tk.LEFT, padx=5)
+
+        # Matplotlib toolbar
+        toolbar_frame = ttk.Frame(plots_frame)
+        toolbar_frame.pack(fill=tk.X)
+        self.comp_toolbar = NavigationToolbar2Tk(self.comparison_canvas_widget, toolbar_frame)
         self.comp_toolbar.update()
         
-        # Create subplots for comparison
+        # Create comparison plots
         self.comp_ax1 = self.comparison_figure.add_subplot(211)  # Time series
         self.comp_ax2 = self.comparison_figure.add_subplot(212)  # Box plot
         
-        # Comparison stats frame
-        comparison_stats_frame = ttk.Frame(comparison_paned)
-        
-        # Data preparation options
-        prep_options_frame = ttk.LabelFrame(comparison_stats_frame, text="Data Preparation")
-        prep_options_frame.pack(fill=tk.X, pady=5)
-        
-        # Data alignment options
-        align_frame = ttk.Frame(prep_options_frame)
-        align_frame.pack(fill=tk.X, padx=5, pady=2)
-        
-        self.align_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(align_frame, text="Align Datasets", variable=self.align_var).pack(side=tk.LEFT)
-        
-        ttk.Label(align_frame, text="Target Hz:").pack(side=tk.LEFT, padx=(10, 0))
-        self.target_hz_var = tk.StringVar(value="")
-        target_hz_entry = ttk.Entry(align_frame, textvariable=self.target_hz_var, width=8)
-        target_hz_entry.pack(side=tk.LEFT, padx=5)
-        ttk.Label(align_frame, text="(leave empty for auto)").pack(side=tk.LEFT)
+        # Data preprocessing frame
+        preprocess_frame = ttk.LabelFrame(upper_frame, text="Data Preprocessing")
+        preprocess_frame.pack(fill=tk.X, padx=5, pady=5)
         
         # Normalization options
-        norm_frame = ttk.Frame(prep_options_frame)
+        norm_frame = ttk.Frame(preprocess_frame)
         norm_frame.pack(fill=tk.X, padx=5, pady=2)
         
         self.normalize_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(norm_frame, text="Normalize Data", variable=self.normalize_var).pack(side=tk.LEFT)
+        norm_check = ttk.Checkbutton(norm_frame, text="Normalize Data", variable=self.normalize_var)
+        norm_check.pack(side=tk.LEFT)
         
-        ttk.Label(norm_frame, text="Method:").pack(side=tk.LEFT, padx=(10, 0))
-        self.norm_method_var = tk.StringVar(value="min_max")
+        self.norm_method_var = tk.StringVar(value="z_score")
         norm_method_combo = ttk.Combobox(norm_frame, textvariable=self.norm_method_var, 
-                                       width=10, state="readonly")
-        norm_method_combo['values'] = ('min_max', 'z_score', 'robust')
+                                       width=15, state="readonly")
+        norm_method_combo['values'] = ('z_score', 'min_max', 'robust')
         norm_method_combo.pack(side=tk.LEFT, padx=5)
         
-        # View controls for comparison
-        comp_view_frame = ttk.Frame(prep_options_frame)
-        comp_view_frame.pack(fill=tk.X, padx=5, pady=5)
+        # Alignment options
+        align_frame = ttk.Frame(preprocess_frame)
+        align_frame.pack(fill=tk.X, padx=5, pady=2)
         
-        comp_fit_btn = ttk.Button(comp_view_frame, text="Fit Comparison to Window", 
-                                command=lambda: self._fit_comparison_to_window())
-        comp_fit_btn.pack(fill=tk.X, pady=2)
+        self.align_var = tk.BooleanVar(value=False)
+        align_check = ttk.Checkbutton(align_frame, text="Align Datasets", variable=self.align_var)
+        align_check.pack(side=tk.LEFT)
         
-        # Comparison test options
-        test_options_frame = ttk.LabelFrame(comparison_stats_frame, text="Statistical Test")
-        test_options_frame.pack(fill=tk.X, pady=5)
+        ttk.Label(align_frame, text="Target Hz:").pack(side=tk.LEFT, padx=(5, 0))
+        self.target_hz_var = tk.StringVar()
+        target_hz_entry = ttk.Entry(align_frame, textvariable=self.target_hz_var, width=8)
+        target_hz_entry.pack(side=tk.LEFT, padx=5)
         
-        # Add test type selector
-        test_frame = ttk.Frame(test_options_frame)
-        test_frame.pack(fill=tk.X, padx=5, pady=5)
+        # Selected files for comparison
+        selected_frame = ttk.LabelFrame(upper_frame, text="Selected Files")
+        selected_frame.pack(fill=tk.X, padx=5, pady=5)
         
-        ttk.Label(test_frame, text="Test Type:").pack(side=tk.LEFT)
-        self.test_type_var = tk.StringVar(value="mann_whitney")
-        self.test_dropdown = ttk.Combobox(test_frame, textvariable=self.test_type_var)
-        self.test_dropdown['values'] = ("mann_whitney", "t_test", "wilcoxon", "ks_test")
-        self.test_dropdown.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
+        # Create scrollable listbox for selected files
+        file_list_frame = ttk.Frame(selected_frame)
+        file_list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # Add a variable for the test description
-        self.test_description_var = tk.StringVar()
+        file_list_scrollbar = ttk.Scrollbar(file_list_frame)
+        file_list_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # Define the update_test_description function
-        def update_test_description(*args):
-            test = self.test_type_var.get()
-            descriptions = {
-                'mann_whitney': "Non-parametric, two independent groups",
-                'wilcoxon': "Non-parametric, paired samples",
-                'ks_test': "Non-parametric, compares distributions",
-                't_test': "Parametric, two independent groups with equal variance"
-            }
-            self.test_description_var.set(descriptions.get(test, ""))
+        self.comparison_file_listbox = tk.Listbox(file_list_frame, height=5, selectmode=tk.EXTENDED,
+                                               yscrollcommand=file_list_scrollbar.set)
+        self.comparison_file_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        file_list_scrollbar.config(command=self.comparison_file_listbox.yview)
         
-        # Add the trace to update the description when the test type changes
-        self.test_type_var.trace_add("write", update_test_description)
-        
-        # Add test description label
-        self.test_description_var.set("Non-parametric, two independent groups")
-        
-        # Test suggestion assistant button
-        suggest_test_btn = ttk.Button(test_options_frame, text="Test Suggestion Assistant", 
-                                   command=lambda: messagebox.showinfo("Information", "Test suggestion functionality is not implemented yet."))
-        suggest_test_btn.pack(fill=tk.X, padx=5, pady=5)
-        
-        # Progress bar frame
-        progress_frame = ttk.Frame(test_options_frame)
-        progress_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        self.progress_var = tk.DoubleVar(value=0.0)
-        self.progress_bar = ttk.Progressbar(
-            progress_frame, 
-            orient=tk.HORIZONTAL, 
-            length=100, 
-            mode='determinate',
-            variable=self.progress_var
-        )
-        self.progress_bar.pack(fill=tk.X, expand=True)
-        
-        self.progress_label = ttk.Label(progress_frame, text="", font=('Segoe UI', 8))
-        self.progress_label.pack(fill=tk.X, pady=(2, 0))
-        
-        # Radio buttons for test selection - keep for backward compatibility
-        # But update labels to show which are for 2 groups vs multiple groups
-        test_2group_frame = ttk.LabelFrame(test_options_frame, text="Two Group Tests")
-        test_2group_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        ttk.Radiobutton(test_2group_frame, text="Mann-Whitney U Test", 
-                      variable=self.test_type_var, 
-                      value="mann_whitney").pack(anchor=tk.W, padx=5)
-        ttk.Radiobutton(test_2group_frame, text="Wilcoxon Signed-Rank Test", 
-                      variable=self.test_type_var,
-                      value="wilcoxon").pack(anchor=tk.W, padx=5)
-        ttk.Radiobutton(test_2group_frame, text="Kolmogorov-Smirnov Test", 
-                      variable=self.test_type_var,
-                      value="ks_2samp").pack(anchor=tk.W, padx=5)
-        ttk.Radiobutton(test_2group_frame, text="Independent t-test", 
-                      variable=self.test_type_var,
-                      value="t_test").pack(anchor=tk.W, padx=5)
-        ttk.Radiobutton(test_2group_frame, text="Welch's t-test", 
-                      variable=self.test_type_var,
-                      value="welch_t_test").pack(anchor=tk.W, padx=5)
-        
-        # Multiple group tests
-        test_multigroup_frame = ttk.LabelFrame(test_options_frame, text="Multiple Group Tests")
-        test_multigroup_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        ttk.Radiobutton(test_multigroup_frame, text="One-way ANOVA (parametric)", 
-                      variable=self.test_type_var,
-                      value="anova").pack(anchor=tk.W, padx=5)
-        ttk.Radiobutton(test_multigroup_frame, text="Kruskal-Wallis H-test (non-parametric)", 
-                      variable=self.test_type_var,
-                      value="kruskal").pack(anchor=tk.W, padx=5)
-        ttk.Radiobutton(test_multigroup_frame, text="Friedman Test (paired non-parametric)", 
-                      variable=self.test_type_var,
-                      value="friedman").pack(anchor=tk.W, padx=5)
+        # Compare button
+        compare_btn_frame = ttk.Frame(upper_frame)
+        compare_btn_frame.pack(fill=tk.X, padx=5, pady=5)
         
         # Run comparison button
-        compare_run_btn = ttk.Button(test_options_frame, text="Run Comparison Test", 
-                                  command=lambda: self._run_comparison_test(), style='Primary.TButton')
-        compare_run_btn.pack(fill=tk.X, padx=5, pady=5)
+        compare_btn = ttk.Button(compare_btn_frame, text="Run Comparison", 
+                               command=lambda: self._run_comparison_test_wrapper(), style='Primary.TButton')
+        compare_btn.pack(fill=tk.X)
         
-        # Comparison results text with scrollbar
-        comp_text_frame = ttk.Frame(comparison_stats_frame)
-        comp_text_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        # Progress bar
+        progress_frame = ttk.Frame(upper_frame)
+        progress_frame.pack(fill=tk.X, padx=5, pady=5)
         
-        comp_scrollbar = ttk.Scrollbar(comp_text_frame)
-        comp_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.progress_var = tk.DoubleVar()
+        progress_bar = ttk.Progressbar(progress_frame, variable=self.progress_var, 
+                                     maximum=100, mode='determinate')
+        progress_bar.pack(fill=tk.X, side=tk.TOP)
         
-        self.comparison_text = tk.Text(comp_text_frame, font=('Consolas', 10), wrap=tk.WORD)
+        self.progress_label = ttk.Label(progress_frame, text="")
+        self.progress_label.pack(side=tk.TOP)
+        
+        # Lower frame for results
+        lower_frame = ttk.Frame(comparison_paned)
+        comparison_paned.add(lower_frame, weight=2)
+        
+        # Results text widget with scrollbar
+        results_frame = ttk.LabelFrame(lower_frame, text="Comparison Results")
+        results_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Add scrollbar to results
+        results_scroll = ttk.Scrollbar(results_frame)
+        results_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.comparison_text = tk.Text(results_frame, wrap=tk.WORD, width=50, height=20,
+                                     yscrollcommand=results_scroll.set)
         self.comparison_text.pack(fill=tk.BOTH, expand=True)
-        self.comparison_text.config(yscrollcommand=comp_scrollbar.set)
-        comp_scrollbar.config(command=self.comparison_text.yview)
+        results_scroll.config(command=self.comparison_text.yview)
         
-        # Add both frames to the paned window
-        comparison_paned.add(comparison_plot_frame, weight=2)
-        comparison_paned.add(comparison_stats_frame, weight=1)
+        # Export results button
+        export_btn = ttk.Button(lower_frame, text="Export Results", 
+                              command=lambda: self._export_comparison_results())
+        export_btn.pack(side=tk.RIGHT, padx=5, pady=5)
         
         # About tab
-        about_frame = ttk.Frame(right_notebook)
-        right_notebook.add(about_frame, text="About")
+        about_frame = ttk.Frame(self.right_notebook)
+        self.right_notebook.add(about_frame, text="About")
         
         # Create scrollable text widget for About information
         about_text_frame = ttk.Frame(about_frame)
@@ -2633,7 +2753,7 @@ class HexoskinWavApp(tk.Tk):
         about_text.tag_configure("bullet", font=('Segoe UI', 11), lmargin1=20, lmargin2=30)
         
         about_text.insert(tk.END, "Hexoskin WAV File Analyzer\n", "title")
-        about_text.insert(tk.END, "Version 0.0.2\n\n", "center")
+        about_text.insert(tk.END, "Version 0.0.3\n\n", "center")
         
         about_text.insert(tk.END, "Created by\n", "center")
         about_text.insert(tk.END, "Diego Malpica, MD\n", "author")
@@ -2663,15 +2783,20 @@ class HexoskinWavApp(tk.Tk):
         for feature in features:
             about_text.insert(tk.END, f"• {feature}\n", "bullet")
         
-        about_text.insert(tk.END, "\nNew in Version 0.0.2\n", "heading")
+        about_text.insert(tk.END, "\nNew in Version 0.0.3\n", "heading")
         updates = [
-            "Enhanced statistical analysis with comprehensive descriptive statistics",
-            "Advanced normality tests including Anderson-Darling and Jarque-Bera",
-            "Support for comparing up to 15 datasets simultaneously",
-            "New statistical tests: Welch's ANOVA, RM-ANOVA, and Aligned Ranks Transform",
-            "Improved post-hoc analysis with multiple correction methods",
-            "Interactive statistical visualization with QQ plots and histograms",
-            "Export capabilities for all statistical results"
+            "Fixed issue with notebook widget initialization to properly display comparisons",
+            "Improved error handling in post-hoc analysis for multiple dataset comparisons",
+            "Fixed post-hoc analysis display in statistical comparison results",
+            "Enhanced consistency in variable naming throughout code",
+            "Enhanced post-hoc analysis display with detailed results",
+            "Improved statistical test suggestions with data-driven recommendations",
+            "Added clear explanations when post-hoc analysis is not performed",
+            "Enhanced multiple testing correction with FDR (False Discovery Rate)",
+            "Improved effect size interpretations for all statistical tests",
+            "Added comprehensive pairwise comparison tables",
+            "Enhanced visualization of statistical results",
+            "Fixed various indentation errors in code"
         ]
         
         for update in updates:
@@ -2740,6 +2865,12 @@ class HexoskinWavApp(tk.Tk):
         self.selected_files_for_comparison = []
         for index in selection:
             self.selected_files_for_comparison.append(self.loaded_files[index])
+        
+        # Update the comparison file listbox if it exists
+        if hasattr(self, 'comparison_file_listbox'):
+            self.comparison_file_listbox.delete(0, tk.END)
+            for file_info in self.selected_files_for_comparison:
+                self.comparison_file_listbox.insert(tk.END, file_info['name'])
         
         # For the plot tab, use the first selected file
         if selection:
@@ -3014,6 +3145,15 @@ class HexoskinWavApp(tk.Tk):
         if len(self.selected_files_for_comparison) > 15:
             messagebox.showinfo("Information", "Maximum 15 files can be compared at once. Using the first 15 selected files.")
             self.selected_files_for_comparison = self.selected_files_for_comparison[:15]
+            
+            # Update the comparison file listbox
+            if hasattr(self, 'comparison_file_listbox'):
+                self.comparison_file_listbox.delete(0, tk.END)
+                for file_info in self.selected_files_for_comparison:
+                    self.comparison_file_listbox.insert(tk.END, file_info['name'])
+        
+        # Switch to the comparison tab
+        self.right_notebook.select(1)  # Select the comparison tab (index 1)
         
         # Update progress bar
         self.progress_var.set(0)
@@ -3341,19 +3481,39 @@ class HexoskinWavApp(tk.Tk):
             self.comparison_text.insert(tk.END, "DESCRIPTIVE STATISTICS\n")
             self.comparison_text.insert(tk.END, "-" * 50 + "\n")
             
-            # Create a table-like format
-            self.comparison_text.insert(tk.END, f"{'Statistic':15} {'File 1':15} {'File 2':15}\n")
-            self.comparison_text.insert(tk.END, "-" * 45 + "\n")
+            # Create a table-like format for multiple files
+            desc_stats = result['descriptive_stats']
+            num_files = len(desc_stats['names'])
             
-            desc1 = result['descriptive_stats_1']
-            desc2 = result['descriptive_stats_2']
+            # Calculate column widths
+            name_width = max(15, max(len(name) for name in desc_stats['names']))
+            col_width = max(name_width, 15)  # At least 15 characters wide
             
-            self.comparison_text.insert(tk.END, f"{'Count':15} {desc1['count']:15.0f} {desc2['count']:15.0f}\n")
-            self.comparison_text.insert(tk.END, f"{'Mean':15} {desc1['mean']:15.4f} {desc2['mean']:15.4f}\n")
-            self.comparison_text.insert(tk.END, f"{'Median':15} {desc1['median']:15.4f} {desc2['median']:15.4f}\n")
-            self.comparison_text.insert(tk.END, f"{'Std Dev':15} {desc1['std']:15.4f} {desc2['std']:15.4f}\n")
-            self.comparison_text.insert(tk.END, f"{'Min':15} {desc1['min']:15.4f} {desc2['min']:15.4f}\n")
-            self.comparison_text.insert(tk.END, f"{'Max':15} {desc1['max']:15.4f} {desc2['max']:15.4f}\n\n")
+            # Create header
+            header = f"{'Statistic':15}"
+            for i, name in enumerate(desc_stats['names']):
+                header += f" {name[:col_width]:>{col_width}}"
+            self.comparison_text.insert(tk.END, header + "\n")
+            self.comparison_text.insert(tk.END, "-" * (15 + col_width * num_files) + "\n")
+            
+            # Add statistics rows
+            stats_to_display = [
+                ('Count', 'counts', '0f'),
+                ('Mean', 'means', '.4f'),
+                ('Median', 'medians', '.4f'),
+                ('Std Dev', 'stds', '.4f'),
+                ('Min', 'mins', '.4f'),
+                ('Max', 'maxs', '.4f')
+            ]
+            
+            for label, key, format_str in stats_to_display:
+                row = f"{label:15}"
+                for i in range(num_files):
+                    value = desc_stats[key][i]
+                    row += f" {value:{format_str}:>{col_width}}"
+                self.comparison_text.insert(tk.END, row + "\n")
+            
+            self.comparison_text.insert(tk.END, "\n")
             
             # Interpretation
             self.comparison_text.insert(tk.END, "INTERPRETATION\n")
@@ -3361,63 +3521,109 @@ class HexoskinWavApp(tk.Tk):
             self.comparison_text.insert(tk.END, f"{result['interpretation']}\n")
             
             # Display post-hoc analysis for significant results
-            if result['reject_null'] and 'post_hoc_results' in result and result['post_hoc_results']:
-                post_hoc = result['post_hoc_results']
+            if result['reject_null']:
+                if 'post_hoc_results' in result and result['post_hoc_results']:
+                    post_hoc = result['post_hoc_results']
                 
+                    self.comparison_text.insert(tk.END, "\nPOST-HOC ANALYSIS\n")
+                    self.comparison_text.insert(tk.END, "-" * 50 + "\n")
+                
+                    # Display test information
+                    self.comparison_text.insert(tk.END, f"Test: {post_hoc['test']}\n")
+                    self.comparison_text.insert(tk.END, f"Description: {post_hoc['description']}\n\n")
+                    
+                    # Display pairwise comparisons in a table format
+                    if 'pairwise_p_values' in post_hoc:
+                        self.comparison_text.insert(tk.END, "Pairwise Comparisons:\n")
+                        
+                        # Calculate column widths for table
+                        group_width = max(15, max(len(pair['group1']) for pair in post_hoc['pairwise_p_values']))
+                        group_width = max(group_width, max(len(pair['group2']) for pair in post_hoc['pairwise_p_values']))
+                        
+                        # Create header
+                        header = f"{'Group 1':{group_width}} {'Group 2':{group_width}} {'p-value':10} {'Adj. p-value':12} {'Effect Size':12} {'Significant':10}\n"
+                        self.comparison_text.insert(tk.END, header)
+                        self.comparison_text.insert(tk.END, "-" * (group_width * 2 + 44) + "\n")
+                        
+                        # Add rows
+                        for pair in post_hoc['pairwise_p_values']:
+                            p_val = pair['p_value']
+                            p_adj = pair.get('p_value_adjusted', p_val)  # Use original p-value if no adjustment
+                            effect = pair.get('effect_size', '')
+                            
+                            row = (f"{pair['group1']:{group_width}} "
+                                  f"{pair['group2']:{group_width}} "
+                                  f"{p_val:10.4f} "
+                                  f"{p_adj:12.4f} "
+                                  f"{effect:12.4f} "
+                                  f"{'Yes' if pair['significant'] else 'No':10}\n")
+                            self.comparison_text.insert(tk.END, row)
+                        
+                        self.comparison_text.insert(tk.END, "\n")
+                        
+                        # Display FDR results if available
+                        if 'fdr_significant_pairs' in post_hoc:
+                            self.comparison_text.insert(tk.END, "FDR-Corrected Results:\n")
+                            self.comparison_text.insert(tk.END, f"Number of significant pairs after FDR correction: {len(post_hoc['fdr_significant_pairs'])}\n\n")
+                    
+                    # Display multiple testing correction information
+                    if 'multiple_testing_correction' in post_hoc:
+                        mtc = post_hoc['multiple_testing_correction']
+                        self.comparison_text.insert(tk.END, "Multiple Testing Correction:\n")
+                        self.comparison_text.insert(tk.END, f"Method: {mtc['method']}\n")
+                        self.comparison_text.insert(tk.END, f"Description: {mtc['description']}\n")
+                        if 'fdr_method' in mtc:
+                            self.comparison_text.insert(tk.END, f"Additional correction: {mtc['fdr_method']} ({mtc['fdr_description']})\n")
+                        self.comparison_text.insert(tk.END, "\n")
+                    
+                    # Display effect size interpretation if available
+                    if any('effect_size_type' in pair for pair in post_hoc['pairwise_p_values']):
+                        self.comparison_text.insert(tk.END, "Effect Size Interpretation:\n")
+                        for pair in post_hoc['pairwise_p_values']:
+                            if 'effect_size' in pair and 'effect_size_type' in pair:
+                                effect_size = abs(pair['effect_size'])
+                                interpretation = ""
+                                if pair['effect_size_type'] == "Cohen's d" or pair['effect_size_type'] == "Hedges' g":
+                                    if effect_size < 0.2:
+                                        interpretation = "negligible effect"
+                                    elif effect_size < 0.5:
+                                        interpretation = "small effect"
+                                    elif effect_size < 0.8:
+                                        interpretation = "medium effect"
+                                    else:
+                                        interpretation = "large effect"
+                                elif 'correlation' in pair['effect_size_type'].lower():
+                                    if effect_size < 0.1:
+                                        interpretation = "negligible effect"
+                                    elif effect_size < 0.3:
+                                        interpretation = "small effect"
+                                    elif effect_size < 0.5:
+                                        interpretation = "medium effect"
+                                    else:
+                                        interpretation = "large effect"
+                                
+                                if interpretation:
+                                    self.comparison_text.insert(tk.END, 
+                                        f"{pair['group1']} vs {pair['group2']}: {pair['effect_size_type']} = {pair['effect_size']:.4f} ({interpretation})\n")
+                        
+                        self.comparison_text.insert(tk.END, "\n")
+                else:
+                    self.comparison_text.insert(tk.END, "\nPOST-HOC ANALYSIS\n")
+                    self.comparison_text.insert(tk.END, "-" * 50 + "\n")
+                    if 'post_hoc_results' not in result:
+                        self.comparison_text.insert(tk.END, "Post-hoc analysis was not performed. This might be due to:\n")
+                        self.comparison_text.insert(tk.END, "1. The test type does not support post-hoc analysis\n")
+                        self.comparison_text.insert(tk.END, "2. An error occurred during post-hoc analysis\n")
+                    elif not result['post_hoc_results']:
+                        self.comparison_text.insert(tk.END, "Post-hoc analysis was attempted but returned no results. This might be due to:\n")
+                        self.comparison_text.insert(tk.END, "1. Insufficient data for pairwise comparisons\n")
+                        self.comparison_text.insert(tk.END, "2. No significant pairwise differences were found\n")
+                    self.comparison_text.insert(tk.END, "\nConsider checking the data or using a different test type if post-hoc analysis is needed.\n\n")
+            else:
                 self.comparison_text.insert(tk.END, "\nPOST-HOC ANALYSIS\n")
                 self.comparison_text.insert(tk.END, "-" * 50 + "\n")
-                
-                # Display normality test results
-                if 'normality' in post_hoc:
-                    self.comparison_text.insert(tk.END, "Normality Assessment:\n")
-                    norm1 = post_hoc['normality']['dataset1']
-                    norm2 = post_hoc['normality']['dataset2']
-                    
-                    if 'shapiro_p' in norm1:
-                        self.comparison_text.insert(tk.END, f"Dataset 1: {'Normal' if norm1['is_normal'] else 'Non-normal'} distribution (Shapiro p={norm1['shapiro_p']:.4f})\n")
-                        self.comparison_text.insert(tk.END, f"Dataset 2: {'Normal' if norm2['is_normal'] else 'Non-normal'} distribution (Shapiro p={norm2['shapiro_p']:.4f})\n")
-                    else:
-                        self.comparison_text.insert(tk.END, f"Dataset 1: {'Normal' if norm1['is_normal'] else 'Non-normal'} distribution\n")
-                        self.comparison_text.insert(tk.END, f"Dataset 2: {'Normal' if norm2['is_normal'] else 'Non-normal'} distribution\n")
-                
-                # Display homogeneity of variance results
-                if 'homogeneity' in post_hoc:
-                    homo = post_hoc['homogeneity']
-                    if 'levene_p' in homo:
-                        self.comparison_text.insert(tk.END, f"\nHomogeneity of Variance:\n")
-                        self.comparison_text.insert(tk.END, f"Equal variances: {'Yes' if homo['equal_variance'] else 'No'} (Levene's test p={homo['levene_p']:.4f})\n")
-                
-                # Display bootstrap confidence intervals
-                if 'bootstrap' in post_hoc:
-                    boot = post_hoc['bootstrap']
-                    self.comparison_text.insert(tk.END, f"\nBootstrap Analysis ({boot['bootstrap_samples']} samples):\n")
-                    self.comparison_text.insert(tk.END, f"95% CI for the difference: [{boot['diff_ci_lower']:.4f}, {boot['diff_ci_upper']:.4f}]\n")
-                    
-                    # Interpretation of CI
-                    if boot['diff_ci_lower'] > 0 and boot['diff_ci_upper'] > 0:
-                        self.comparison_text.insert(tk.END, "Dataset 1 values are consistently higher than Dataset 2 values.\n")
-                    elif boot['diff_ci_lower'] < 0 and boot['diff_ci_upper'] < 0:
-                        self.comparison_text.insert(tk.END, "Dataset 2 values are consistently higher than Dataset 1 values.\n")
-                    else:
-                        self.comparison_text.insert(tk.END, "The direction of the difference is not consistent (CI includes zero).\n")
-                
-                # Display additional effect sizes
-                if 'additional_effect_sizes' in post_hoc:
-                    add_effects = post_hoc['additional_effect_sizes']
-                    self.comparison_text.insert(tk.END, f"\nAdditional Effect Size Measures:\n")
-                    
-                    if 'cles' in add_effects:
-                        cles = add_effects['cles']
-                        self.comparison_text.insert(tk.END, f"Common Language Effect Size: {cles:.4f}\n")
-                        self.comparison_text.insert(tk.END, f"Interpretation: There is a {cles*100:.1f}% probability that a random value from Dataset 1 exceeds a random value from Dataset 2.\n")
-                
-                # Display test recommendations
-                if 'recommendations' in post_hoc and post_hoc['recommendations']:
-                    self.comparison_text.insert(tk.END, f"\nRECOMMENDED FOLLOW-UP ACTIONS\n")
-                    self.comparison_text.insert(tk.END, "-" * 50 + "\n")
-                    
-                    for i, rec in enumerate(post_hoc['recommendations'], 1):
-                        self.comparison_text.insert(tk.END, f"{i}. {rec}\n")
+                self.comparison_text.insert(tk.END, "Post-hoc analysis was not performed because the main test did not show significant differences.\n")
+                self.comparison_text.insert(tk.END, "Post-hoc tests are only meaningful when the main test indicates significant differences between groups.\n\n")
             
             # Recommendations
             self.comparison_text.insert(tk.END, "\nRECOMMENDATIONS\n")
@@ -3729,13 +3935,21 @@ class HexoskinWavApp(tk.Tk):
 
     def _show_statistics(self):
         """Display comprehensive statistics for the selected file"""
-        selected_index = self.file_list.curselection()
-        if not selected_index:
+        selected_indices = self.files_listbox.curselection()
+        if not selected_indices:
             messagebox.showinfo("Information", "Please select a file first")
             return
             
-        selected_path = self.file_list.get(selected_index)
-        file_info = self.processed_files.get(selected_path)
+        # Use only the first selected file
+        selected_index = selected_indices[0]
+        selected_path = self.files_listbox.get(selected_index)
+        
+        # Find the corresponding file info from loaded_files
+        file_info = None
+        for file_data in self.loaded_files:
+            if file_data['name'] == selected_path:
+                file_info = file_data
+                break
         
         if not file_info or not file_info.get('loader'):
             messagebox.showerror("Error", "File data not found. Please reload the file.")
@@ -3750,7 +3964,7 @@ class HexoskinWavApp(tk.Tk):
             
         # Create statistics window
         stats_window = tk.Toplevel(self)
-        stats_window.title(f"Statistics: {selected_path}")
+        stats_window.title(f"Statistical Analysis: {selected_path}")
         stats_window.geometry("900x700")
         stats_window.minsize(800, 600)
         
@@ -3764,15 +3978,17 @@ class HexoskinWavApp(tk.Tk):
         
         # 1. Basic Statistics Tab
         basic_tab = ttk.Frame(notebook)
-        notebook.add(basic_tab, text="Basic Statistics")
+        notebook.add(basic_tab, text="Descriptive Statistics")
         
         # Basic stats table
-        basic_frame = ttk.LabelFrame(basic_tab, text="Descriptive Statistics")
+        basic_frame = ttk.LabelFrame(basic_tab, text="Descriptive Statistics Summary")
         basic_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # Create a treeview for basic statistics
-        basic_tree = ttk.Treeview(basic_frame, columns=("Value",), show="headings")
+        basic_tree = ttk.Treeview(basic_frame, columns=("Statistic", "Value",), show="headings")
+        basic_tree.heading("Statistic", text="Statistic")
         basic_tree.heading("Value", text="Value")
+        basic_tree.column("Statistic", width=200)
         basic_tree.column("Value", width=150)
         basic_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
@@ -3790,7 +4006,9 @@ class HexoskinWavApp(tk.Tk):
             else:
                 formatted_value = str(stat_value)
                 
-            basic_tree.insert("", tk.END, values=(stat_name, formatted_value))
+            # Convert snake_case to Title Case for display
+            display_name = stat_name.replace('_', ' ').title()
+            basic_tree.insert("", tk.END, values=(display_name, formatted_value))
             
         # Add additional statistics
         additional_stats = stats.get('additional', {})
@@ -3804,18 +4022,49 @@ class HexoskinWavApp(tk.Tk):
             else:
                 formatted_value = str(stat_value)
                 
-            basic_tree.insert("", tk.END, values=(stat_name, formatted_value))
+            # Convert snake_case to Title Case for display
+            display_name = stat_name.replace('_', ' ').title()
+            basic_tree.insert("", tk.END, values=(display_name, formatted_value))
+        
+        # Add a scientific report frame
+        scientific_report_frame = ttk.LabelFrame(basic_tab, text="Scientific Report")
+        scientific_report_frame.pack(fill=tk.X, pady=10, padx=5)
+        
+        report_text = tk.Text(scientific_report_frame, wrap=tk.WORD, height=8, font=('Segoe UI', 10))
+        report_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Create a formal scientific description of the descriptive statistics
+        sample_size = basic_stats.get('count', 0)
+        mean_value = basic_stats.get('mean', 0)
+        std_value = basic_stats.get('std', 0)
+        min_value = basic_stats.get('min', 0)
+        max_value = basic_stats.get('max', 0)
+        median_value = basic_stats.get('50%', 0)
+        
+        skewness = additional_stats.get('skewness', 0)
+        kurtosis = additional_stats.get('kurtosis', 0)
+        cv = additional_stats.get('coefficient_of_variation', 0)
+        
+        scientific_description = f"""The analysis of the physiological data sample (n = {sample_size}) revealed the following results:
+
+The mean value was {mean_value:.2f} ± {std_value:.2f} (mean ± SD), with a range of {min_value:.2f} to {max_value:.2f}. The median value was {median_value:.2f}, indicating a {'positively' if skewness > 0 else 'negatively'} skewed distribution (skewness = {skewness:.3f}). The coefficient of variation was {cv:.2f}, suggesting {'high' if cv > 0.3 else 'moderate' if cv > 0.1 else 'low'} variability in the dataset.
+
+The distribution exhibited a kurtosis value of {kurtosis:.3f}, indicating a {'leptokurtic (heavy-tailed)' if kurtosis > 0 else 'platykurtic (light-tailed)'} distribution compared to a normal distribution.
+"""
+        
+        report_text.insert(tk.END, scientific_description)
+        report_text.config(state=tk.DISABLED)
         
         # 2. Normality Tests Tab
         normality_tab = ttk.Frame(notebook)
-        notebook.add(normality_tab, text="Normality Tests")
+        notebook.add(normality_tab, text="Normality Analysis")
         
         # Create a frame for normality tests
         normality_frame = ttk.LabelFrame(normality_tab, text="Normality Test Results")
         normality_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # Create a text widget with scrollbar for displaying normality test results
-        normality_text = tk.Text(normality_frame, wrap=tk.WORD, font=('Consolas', 10))
+        normality_text = tk.Text(normality_frame, wrap=tk.WORD, font=('Segoe UI', 10))
         normality_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         normality_sb = ttk.Scrollbar(normality_frame, orient=tk.VERTICAL, command=normality_text.yview)
@@ -3829,18 +4078,19 @@ class HexoskinWavApp(tk.Tk):
         overall = normality_results.get('overall_assessment', {})
         assessment = overall.get('assessment', "No assessment available")
         
-        normality_text.insert(tk.END, f"OVERALL ASSESSMENT:\n{assessment}\n\n")
+        normality_text.insert(tk.END, "NORMALITY ASSESSMENT\n\n", "heading")
+        normality_text.insert(tk.END, f"{assessment}\n\n")
         
         # Add recommendations
         recommendations = overall.get('recommendation', [])
         if recommendations:
-            normality_text.insert(tk.END, "RECOMMENDATIONS:\n")
+            normality_text.insert(tk.END, "RECOMMENDATIONS\n\n", "heading")
             for i, rec in enumerate(recommendations, 1):
                 normality_text.insert(tk.END, f"{i}. {rec}\n")
             normality_text.insert(tk.END, "\n")
         
-        # Individual test results
-        normality_text.insert(tk.END, "NORMALITY TESTS:\n\n")
+        # Individual test results in formal scientific format
+        normality_text.insert(tk.END, "STATISTICAL TESTS OF NORMALITY\n\n", "heading")
         
         test_names = [
             'shapiro_wilk', 'dagostino_k2', 'kolmogorov_smirnov', 
@@ -3853,35 +4103,72 @@ class HexoskinWavApp(tk.Tk):
                 continue
                 
             if 'error' in test_result:
-                normality_text.insert(tk.END, f"{test_name.replace('_', ' ').title()}: Error - {test_result['error']}\n\n")
                 continue
                 
-            normality_text.insert(tk.END, f"{test_name.replace('_', ' ').title()}:\n")
-            normality_text.insert(tk.END, f"  Description: {test_result.get('description', 'No description')}\n")
-            
-            if 'statistic' in test_result:
-                normality_text.insert(tk.END, f"  Statistic: {test_result['statistic']:.4f}\n")
-                
-            if 'p_value' in test_result:
-                normality_text.insert(tk.END, f"  p-value: {test_result['p_value']:.4f}\n")
-                
+            # Format the test name for display
+            display_name = test_name.replace('_', ' ').title()
+            statistic = test_result.get('statistic', 0)
+            p_value = test_result.get('p_value', 1)
             normal = test_result.get('normal', False)
-            normality_text.insert(tk.END, f"  Normal distribution: {'Yes' if normal else 'No'}\n\n")
+            
+            # Get the degrees of freedom if available
+            df = test_result.get('df', '')
+            df_str = f"({df})" if df else ""
+            
+            # Format according to scientific standards
+            if p_value < 0.001:
+                p_value_str = "p < 0.001"
+            else:
+                p_value_str = f"p = {p_value:.3f}"
+                
+            # Create scientific report for this test
+            if test_name == 'shapiro_wilk':
+                test_stat_name = "W"
+            elif test_name == 'dagostino_k2':
+                test_stat_name = "K²"
+            elif test_name == 'kolmogorov_smirnov':
+                test_stat_name = "D"
+            elif test_name == 'anderson_darling':
+                test_stat_name = "A²"
+            elif test_name == 'jarque_bera':
+                test_stat_name = "JB"
+            else:
+                test_stat_name = "Statistic"
+                
+            scientific_report = f"{display_name}: {test_stat_name}{df_str} = {statistic:.3f}, {p_value_str}"
+            
+            # Add interpretation
+            interpretation = f"The data {'appears to be normally distributed' if normal else 'deviates significantly from a normal distribution'} according to this test."
+            
+            normality_text.insert(tk.END, f"{scientific_report}\n")
+            normality_text.insert(tk.END, f"{interpretation}\n\n")
         
-        # Add distribution shape information
+        # Add distribution shape information in formal scientific format
         shape_info = normality_results.get('distribution_shape', {})
         if shape_info and 'error' not in shape_info:
-            normality_text.insert(tk.END, "DISTRIBUTION SHAPE:\n")
-            normality_text.insert(tk.END, f"  Skewness: {shape_info['skewness']:.4f}\n")
-            normality_text.insert(tk.END, f"  Skewness interpretation: {shape_info['skewness_interpretation']}\n")
-            normality_text.insert(tk.END, f"  Kurtosis: {shape_info['kurtosis']:.4f}\n")
-            normality_text.insert(tk.END, f"  Kurtosis interpretation: {shape_info['kurtosis_interpretation']}\n\n")
+            normality_text.insert(tk.END, "DISTRIBUTION SHAPE ANALYSIS\n\n", "heading")
+            
+            skewness = shape_info.get('skewness', 0)
+            kurtosis = shape_info.get('kurtosis', 0)
+            skew_interp = shape_info.get('skewness_interpretation', '')
+            kurt_interp = shape_info.get('kurtosis_interpretation', '')
+            
+            normality_text.insert(tk.END, f"The distribution exhibited a skewness value of {skewness:.3f}, indicating {skew_interp.lower()}. ")
+            normality_text.insert(tk.END, f"The kurtosis value of {kurtosis:.3f} suggests {kurt_interp.lower()}.\n\n")
+            
+            if abs(skewness) > 1 or abs(kurtosis) > 1:
+                normality_text.insert(tk.END, "These values suggest a substantial deviation from normality, which may affect the validity of parametric statistical tests.\n\n")
+            else:
+                normality_text.insert(tk.END, "These values suggest a mild deviation from normality, which may not substantially affect the validity of parametric statistical tests.\n\n")
+        
+        # Configure text tags
+        normality_text.tag_configure("heading", font=('Segoe UI', 11, 'bold'))
         
         # 3. QQ Plot Tab (if data available)
         qq_plot_data = normality_results.get('qq_plot_data')
         if qq_plot_data and 'error' not in qq_plot_data:
             qq_tab = ttk.Frame(notebook)
-            notebook.add(qq_tab, text="QQ Plot")
+            notebook.add(qq_tab, text="QQ Plot Analysis")
             
             # Create a frame for the QQ plot
             qq_frame = ttk.Frame(qq_tab)
@@ -3908,10 +4195,30 @@ class HexoskinWavApp(tk.Tk):
                    [min_val * slope + intercept, max_val * slope + intercept], 
                    color='red', linestyle='--')
             
-            ax.set_title('Q-Q Plot')
+            ax.set_title('Quantile-Quantile Plot')
             ax.set_xlabel('Theoretical Quantiles')
             ax.set_ylabel('Sample Quantiles')
             ax.grid(True, linestyle='--', alpha=0.7)
+            
+            # Add interpretation text below the plot
+            qq_interpretation_frame = ttk.LabelFrame(qq_tab, text="QQ Plot Interpretation")
+            qq_interpretation_frame.pack(fill=tk.X, padx=5, pady=5)
+            
+            qq_interp_text = tk.Text(qq_interpretation_frame, wrap=tk.WORD, height=6, font=('Segoe UI', 10))
+            qq_interp_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+            
+            # Create formal scientific interpretation of QQ plot
+            r_squared = qq_plot_data.get('r_squared', 0)
+            
+            qq_interpretation = f"""The Quantile-Quantile (Q-Q) plot examines the distribution of the data against the theoretical quantiles of a normal distribution. The plot reveals a correlation of R² = {r_squared:.3f} between the sample and theoretical quantiles.
+
+{'Points that closely follow the reference line indicate alignment with a normal distribution, suggesting the data approximates normality.' if r_squared > 0.95 else 'Deviations from the reference line, particularly at the tails of the distribution, suggest departures from normality. This confirms the results of the formal normality tests.'}
+
+{'The plot reveals no substantial deviations from normality.' if r_squared > 0.95 else 'The plot reveals deviations from normality that warrant consideration when selecting statistical methods for further analysis.'}
+"""
+            
+            qq_interp_text.insert(tk.END, qq_interpretation)
+            qq_interp_text.config(state=tk.DISABLED)
             
             # Embed the plot in the tkinter window
             canvas = FigureCanvasTkAgg(fig, master=qq_frame)
@@ -3924,120 +4231,486 @@ class HexoskinWavApp(tk.Tk):
             toolbar = NavigationToolbar2Tk(canvas, toolbar_frame)
             toolbar.update()
         
-        # 4. Histogram with Normal Distribution Tab
-        hist_tab = ttk.Frame(notebook)
-        notebook.add(hist_tab, text="Histogram")
+        # 4. Results and Recommendations Tab
+        results_tab = ttk.Frame(notebook)
+        notebook.add(results_tab, text="Results & Recommendations")
         
-        # Create a frame for the histogram
-        hist_frame = ttk.Frame(hist_tab)
-        hist_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        results_frame = ttk.Frame(results_tab, padding=10)
+        results_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Create a matplotlib figure
-        fig = Figure(figsize=(6, 6), dpi=100)
-        ax = fig.add_subplot(111)
+        # Create headers
+        ttk.Label(results_frame, text="Statistical Analysis Results", 
+                 font=('Segoe UI', 14, 'bold')).pack(anchor=tk.W, pady=(0, 10))
         
-        # Get the data
-        data = loader.data['value']
+        # Create a text widget for formal scientific results
+        results_text = tk.Text(results_frame, wrap=tk.WORD, height=20, font=('Segoe UI', 10))
+        results_text.pack(fill=tk.BOTH, expand=True)
         
-        # Plot histogram
-        n, bins, patches = ax.hist(data, bins=30, density=True, alpha=0.6, color='blue')
+        # Add scrollbar to results text
+        results_sb = ttk.Scrollbar(results_frame, orient=tk.VERTICAL, command=results_text.yview)
+        results_sb.pack(side=tk.RIGHT, fill=tk.Y)
+        results_text.configure(yscrollcommand=results_sb.set)
         
-        # Add normal distribution curve
-        mu = np.mean(data)
-        sigma = np.std(data)
-        x = np.linspace(mu - 4*sigma, mu + 4*sigma, 100)
-        ax.plot(x, stats.norm.pdf(x, mu, sigma), 'r-', linewidth=2)
+        # Test normality of the data to provide appropriate recommendations
+        is_normal = False
+        normality_tests = normality_results.get('overall_assessment', {})
+        if normality_tests:
+            is_normal = normality_tests.get('is_normal', False)
         
-        ax.set_title('Histogram with Normal Distribution Curve')
-        ax.set_xlabel('Value')
-        ax.set_ylabel('Density')
-        ax.grid(True, linestyle='--', alpha=0.7)
+        # Generate a comprehensive scientific summary
+        full_summary = f"""STATISTICAL ANALYSIS REPORT
+
+Sample Identification: {selected_path}
+Sample Size: n = {sample_size}
+
+DESCRIPTIVE STATISTICS
+Mean ± SD: {mean_value:.2f} ± {std_value:.2f}
+Median (IQR): {median_value:.2f} ({basic_stats.get('25%', 0):.2f} - {basic_stats.get('75%', 0):.2f})
+Range: {min_value:.2f} to {max_value:.2f}
+Coefficient of Variation: {cv:.3f}
+
+DISTRIBUTION CHARACTERISTICS
+Skewness: {skewness:.3f} ({'positive' if skewness > 0 else 'negative'} skew)
+Kurtosis: {kurtosis:.3f} ({'leptokurtic' if kurtosis > 0 else 'platykurtic'})
+Normality Assessment: The data distribution {'appears to be normal' if is_normal else 'deviates from normality'}
+
+STATISTICAL INFERENCE
+The analysis of this physiological dataset reveals {'normal distribution characteristics' if is_normal else 'non-normal distribution characteristics'}, which has important implications for subsequent statistical analyses. {'Parametric statistical methods are appropriate for further analysis.' if is_normal else 'Non-parametric statistical methods are recommended for further analysis.'}
+
+RECOMMENDATIONS
+1. {'Parametric tests such as t-tests and ANOVA are suitable for comparing this dataset with others.' if is_normal else 'Non-parametric tests such as Mann-Whitney U and Wilcoxon signed-rank tests are recommended for comparing this dataset with others.'}
+2. {'For correlation analyses, Pearson correlation coefficients are appropriate.' if is_normal else 'For correlation analyses, Spearman or Kendall correlation coefficients are recommended.'}
+3. {'Standard error of the mean (SEM) and confidence intervals can be reliably calculated.' if is_normal else 'Bootstrap methods for calculating confidence intervals should be considered.'}
+4. {'Data transformation is not necessary for statistical analysis.' if is_normal else 'Data transformation (e.g., log, square root) might improve normality for certain analyses.'}
+
+CONCLUSION
+This dataset {'demonstrates characteristics consistent with a normal distribution and is suitable for parametric statistical analyses.' if is_normal else 'demonstrates deviations from normality, suggesting that non-parametric approaches or appropriate transformations should be considered for valid statistical inference.'}
+"""
         
-        # Embed the plot in the tkinter window
-        canvas = FigureCanvasTkAgg(fig, master=hist_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        results_text.insert(tk.END, full_summary)
         
-        # Add toolbar
-        toolbar_frame = ttk.Frame(hist_frame)
-        toolbar_frame.pack(fill=tk.X)
-        toolbar = NavigationToolbar2Tk(canvas, toolbar_frame)
-        toolbar.update()
-        
-        # 5. Export Button
+        # Add export button
         export_frame = ttk.Frame(main_frame)
         export_frame.pack(fill=tk.X, pady=10)
         
-        export_btn = ttk.Button(export_frame, text="Export Statistics to CSV", 
-                               command=lambda: self._export_statistics(selected_path, stats))
-        export_btn.pack(side=tk.RIGHT, padx=5)
-    
-    def _export_statistics(self, filename, stats):
-        """Export statistics to a CSV file"""
-        if not stats:
-            messagebox.showerror("Error", "No statistics available to export")
-            return
-            
-        # Ask for save location
+        export_btn = ttk.Button(export_frame, text="Export Results", 
+                              command=lambda: self._export_statistics(f"{selected_path}_stats_report.txt", full_summary))
+        export_btn.pack(side=tk.RIGHT)
+        
+        # Make results text read-only
+        results_text.config(state=tk.DISABLED)
+
+    def _export_statistics(self, filename, content):
+        """Export statistics to a text file"""
+        # Ask for a save location
         save_path = filedialog.asksaveasfilename(
-            defaultextension='.csv',
-            filetypes=[('CSV Files', '*.csv')],
-            initialfile=f"{os.path.basename(filename)}_statistics.csv"
+            title="Save Statistics Report",
+            initialfile=filename,
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
         )
         
         if not save_path:
-            return  # User canceled
+            return  # User cancelled
             
         try:
-            with open(save_path, 'w', newline='') as csvfile:
-                writer = csv.writer(csvfile)
-                writer.writerow(['Statistic', 'Value'])
+            # If content is a string, write it directly as text
+            if isinstance(content, str):
+                with open(save_path, 'w', newline='') as f:
+                    f.write(content)
+            # If content is a dictionary (old stats format), write as CSV
+            elif isinstance(content, dict):
+                with open(save_path, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['Statistic', 'Value'])
                 
-                # Write basic statistics
-                writer.writerow(['=== BASIC STATISTICS ===', ''])
-                for stat_name, stat_value in stats.get('basic', {}).items():
-                    writer.writerow([stat_name, stat_value])
+                    # Write basic statistics
+                    basic_stats = content.get('basic', {})
+                    if basic_stats:
+                        writer.writerow(['=== BASIC STATISTICS ===', ''])
+                        for key, value in basic_stats.items():
+                            writer.writerow([key, value])
                 
-                # Write additional statistics
-                writer.writerow(['=== ADDITIONAL STATISTICS ===', ''])
-                for stat_name, stat_value in stats.get('additional', {}).items():
-                    if stat_name == 'percentiles':
-                        for p_name, p_value in stat_value.items():
-                            writer.writerow([f"percentile_{p_name}", p_value])
-                    elif isinstance(stat_value, (list, dict)):
-                        continue  # Skip complex objects
-                    else:
-                        writer.writerow([stat_name, stat_value])
-                
-                # Write normality test results
-                writer.writerow(['=== NORMALITY TESTS ===', ''])
-                for test_name in ['shapiro_wilk', 'dagostino_k2', 'kolmogorov_smirnov', 'anderson_darling', 'jarque_bera']:
-                    test_result = stats.get('normality', {}).get(test_name, {})
-                    if 'error' in test_result:
-                        writer.writerow([test_name, f"Error: {test_result['error']}"])
-                        continue
-                        
-                    if 'statistic' in test_result:
-                        writer.writerow([f"{test_name}_statistic", test_result['statistic']])
-                    if 'p_value' in test_result:
-                        writer.writerow([f"{test_name}_p_value", test_result['p_value']])
-                    if 'normal' in test_result:
-                        writer.writerow([f"{test_name}_normal", test_result['normal']])
-                
-                # Write overall assessment
-                overall = stats.get('normality', {}).get('overall_assessment', {})
-                if overall:
-                    writer.writerow(['=== OVERALL ASSESSMENT ===', ''])
-                    writer.writerow(['assessment', overall.get('assessment', '')])
+                    # Write additional statistics
+                    additional_stats = content.get('additional', {})
+                    if additional_stats:
+                        writer.writerow(['=== ADDITIONAL STATISTICS ===', ''])
+                        for key, value in additional_stats.items():
+                            if isinstance(value, (dict, list)):
+                                continue  # Skip complex values
+                            writer.writerow([key, value])
                     
-                    # Write recommendations
-                    recommendations = overall.get('recommendation', [])
-                    for i, rec in enumerate(recommendations, 1):
-                        writer.writerow([f'recommendation_{i}', rec])
+                    # Write percentiles
+                    percentiles = additional_stats.get('percentiles', {})
+                    if percentiles:
+                        writer.writerow(['=== PERCENTILES ===', ''])
+                        for key, value in percentiles.items():
+                            writer.writerow([f"Percentile {key}", value])
+                
+                    # Write normality test results
+                    normality = content.get('normality', {})
+                    if normality:
+                        writer.writerow(['=== NORMALITY TESTS ===', ''])
+                        for test_name, test_result in normality.items():
+                            if test_name == 'overall_assessment' or test_name == 'distribution_shape':
+                                continue
+                        
+                            if isinstance(test_result, dict) and 'error' not in test_result:
+                                writer.writerow([f"{test_name.replace('_', ' ').title()} Statistic", test_result.get('statistic', '')])
+                                writer.writerow([f"{test_name.replace('_', ' ').title()} p-value", test_result.get('p_value', '')])
+                                writer.writerow([f"{test_name.replace('_', ' ').title()} Normal", test_result.get('normal', '')])
+                
+                    # Write overall assessment
+                    overall = normality.get('overall_assessment', {})
+                    if overall:
+                        writer.writerow(['=== OVERALL ASSESSMENT ===', ''])
+                        writer.writerow(['assessment', overall.get('assessment', '')])
+                        
+                        # Write recommendations
+                        recommendations = overall.get('recommendation', [])
+                        for i, rec in enumerate(recommendations, 1):
+                            writer.writerow([f'recommendation_{i}', rec])
+            else:
+                raise ValueError("Unsupported content type for export")
             
             messagebox.showinfo("Success", f"Statistics exported to {save_path}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export statistics: {str(e)}")
+
+    def _run_comparison_test_wrapper(self):
+        """Wrapper to handle running the appropriate comparison test"""
+        if not self.selected_files_for_comparison:
+            messagebox.showinfo("Information", "Please select files to compare")
+            return
+
+        # Get the selected files' data
+        processed_data = []
+        for file_info in self.selected_files_for_comparison:
+            loader = file_info['loader']
+            data = loader.get_data().copy()
+            
+            # Apply normalization if enabled
+            if self.normalize_var.get():
+                data = HexoskinWavLoader.normalize_dataset(
+                    data, 
+                    method=self.norm_method_var.get()
+                )
+            
+            # Store processed data
+            processed_data.append({
+                'name': loader.metadata.get('sensor_name', f'File {len(processed_data)+1}'),
+                'data': data,
+                'start_date': loader.metadata.get('start_date', None)
+            })
+
+        # Apply alignment if enabled and there are exactly two datasets
+        if self.align_var.get() and len(processed_data) == 2:
+            target_hz = None
+            if self.target_hz_var.get():
+                try:
+                    target_hz = float(self.target_hz_var.get())
+                except ValueError:
+                    pass
+                    
+            aligned_data1, aligned_data2 = HexoskinWavLoader.align_datasets(
+                processed_data[0]['data'],
+                processed_data[1]['data'],
+                target_hz=target_hz
+            )
+            
+            # Update processed data with aligned data
+            processed_data[0]['data'] = aligned_data1
+            processed_data[1]['data'] = aligned_data2
+
+        # Run the appropriate comparison test
+        if len(processed_data) == 2:
+            self._run_comparison_test(processed_data)
+        else:
+            self._run_multi_comparison_test(processed_data)
+
+    def _run_comparison_test(self, processed_data):
+        """Run statistical comparison between two datasets"""
+        # Get the test type
+        test_type = self.test_type_var.get()
+        
+        # Get the two datasets
+        dataset1 = processed_data[0]['data']
+        dataset2 = processed_data[1]['data']
+        
+        try:
+            # Run the comparison
+            comparison_results = HexoskinWavLoader.compare_datasets(
+                dataset1, dataset2, test_type=test_type
+            )
+            
+            # Clear previous results
+            self.comparison_text.delete(1.0, tk.END)
+            
+            # Create a formal scientific report
+            name1 = processed_data[0]['name']
+            name2 = processed_data[1]['name']
+            
+            # Header
+            self.comparison_text.insert(tk.END, f"Statistical Comparison: {name1} vs {name2}\n")
+            self.comparison_text.insert(tk.END, "=" * 50 + "\n\n")
+            
+            # Test Information
+            self.comparison_text.insert(tk.END, "TEST INFORMATION\n")
+            self.comparison_text.insert(tk.END, "-" * 50 + "\n")
+            self.comparison_text.insert(tk.END, f"Test: {comparison_results['test_name']}\n")
+            self.comparison_text.insert(tk.END, f"Description: {comparison_results['test_description']}\n")
+            self.comparison_text.insert(tk.END, f"Null Hypothesis: {comparison_results['null_hypothesis']}\n\n")
+            
+            # Results
+            self.comparison_text.insert(tk.END, "RESULTS\n")
+            self.comparison_text.insert(tk.END, "-" * 50 + "\n")
+            self.comparison_text.insert(tk.END, f"Test Statistic: {comparison_results['statistic']:.4f}\n")
+            self.comparison_text.insert(tk.END, f"P-value: {comparison_results['p_value']:.4f}\n")
+            self.comparison_text.insert(tk.END, f"Effect Size ({comparison_results['effect_size_name']}): {comparison_results['effect_size']:.4f}\n")
+            self.comparison_text.insert(tk.END, f"Effect Interpretation: {comparison_results['effect_interpretation']}\n\n")
+            
+            # Interpretation
+            self.comparison_text.insert(tk.END, "INTERPRETATION\n")
+            self.comparison_text.insert(tk.END, "-" * 50 + "\n")
+            self.comparison_text.insert(tk.END, f"{comparison_results['interpretation']}\n\n")
+            
+            # Post-hoc results if available
+            if comparison_results.get('post_hoc_results'):
+                post_hoc = comparison_results['post_hoc_results']
+                self.comparison_text.insert(tk.END, "POST-HOC ANALYSIS\n")
+                self.comparison_text.insert(tk.END, "-" * 50 + "\n")
+                
+                if 'pairwise_p_values' in post_hoc:
+                    for pair in post_hoc['pairwise_p_values']:
+                        self.comparison_text.insert(tk.END, 
+                            f"{pair['group1']} vs {pair['group2']}: p = {pair['p_value']:.4f} "
+                            f"({'significant' if pair['significant'] else 'not significant'})\n"
+                        )
+                
+                self.comparison_text.insert(tk.END, "\n")
+            
+            # Store results for potential export
+            self.last_comparison_results = comparison_results
+            
+        except Exception as e:
+            self.comparison_text.delete(1.0, tk.END)
+            self.comparison_text.insert(tk.END, f"Error performing comparison: {str(e)}\n")
+            traceback.print_exc()
+
+    def _suggest_test(self):
+        """Suggest appropriate statistical test based on data characteristics"""
+        if not self.selected_files_for_comparison:
+            messagebox.showinfo("Information", "Please select files to compare first")
+            return
+
+        # Create a new window for the assistant
+        assistant_window = tk.Toplevel(self)
+        assistant_window.title("Test Suggestion Assistant")
+        assistant_window.geometry("600x700")
+        assistant_window.minsize(500, 600)
+
+        # Main frame with padding
+        main_frame = ttk.Frame(assistant_window, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Title
+        ttk.Label(main_frame, text="Statistical Test Suggestion Assistant", 
+                 font=('Segoe UI', 14, 'bold')).pack(pady=(0, 10))
+
+        # Create a text widget for displaying the analysis
+        analysis_text = tk.Text(main_frame, wrap=tk.WORD, font=('Segoe UI', 10))
+        analysis_text.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(main_frame, orient=tk.VERTICAL, command=analysis_text.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        analysis_text.config(yscrollcommand=scrollbar.set)
+
+        # Analyze the data
+        num_datasets = len(self.selected_files_for_comparison)
+        
+        # Header
+        analysis_text.insert(tk.END, "DATA ANALYSIS\n", "heading")
+        analysis_text.insert(tk.END, "=" * 50 + "\n\n")
+        
+        # Number of datasets
+        analysis_text.insert(tk.END, f"Number of datasets selected: {num_datasets}\n\n")
+
+        if num_datasets < 2:
+            analysis_text.insert(tk.END, "Please select at least two datasets for comparison.\n")
+            analysis_text.tag_configure("heading", font=('Segoe UI', 11, 'bold'))
+            return
+
+        # Process the data
+        processed_data = []
+        normality_results = []
+        sample_sizes = []
+        variances = []
+
+        for file_info in self.selected_files_for_comparison:
+            loader = file_info['loader']
+            data = loader.get_data()['value'].values
+            
+            # Check normality
+            if len(data) > 5000:
+                # For large datasets, use D'Agostino's K^2 test
+                stat, p_value = stats.normaltest(data)
+            else:
+                # For smaller datasets, use Shapiro-Wilk test
+                stat, p_value = stats.shapiro(data)
+            
+            is_normal = p_value > 0.05
+            normality_results.append(is_normal)
+            sample_sizes.append(len(data))
+            variances.append(np.var(data, ddof=1))
+
+        # Check if sample sizes are equal
+        equal_sample_sizes = len(set(sample_sizes)) == 1
+
+        # Check homogeneity of variance using Levene's test
+        if num_datasets == 2:
+            data1 = self.selected_files_for_comparison[0]['loader'].get_data()['value'].values
+            data2 = self.selected_files_for_comparison[1]['loader'].get_data()['value'].values
+            _, levene_p = stats.levene(data1, data2)
+            equal_variances = levene_p > 0.05
+        else:
+            # For multiple datasets
+            datasets = [f['loader'].get_data()['value'].values for f in self.selected_files_for_comparison]
+            _, levene_p = stats.levene(*datasets)
+            equal_variances = levene_p > 0.05
+
+        # Display data characteristics
+        analysis_text.insert(tk.END, "DATA CHARACTERISTICS\n", "heading")
+        analysis_text.insert(tk.END, "-" * 50 + "\n\n")
+
+        # Normality
+        analysis_text.insert(tk.END, "Normality Test Results:\n")
+        for i, (is_normal, size) in enumerate(zip(normality_results, sample_sizes)):
+            name = self.selected_files_for_comparison[i]['name']
+            analysis_text.insert(tk.END, f"Dataset {i+1} ({name}):\n")
+            analysis_text.insert(tk.END, f"• Sample size: {size}\n")
+            analysis_text.insert(tk.END, f"• Distribution: {'Normal' if is_normal else 'Non-normal'}\n")
+        analysis_text.insert(tk.END, "\n")
+
+        # Sample sizes
+        analysis_text.insert(tk.END, "Sample Sizes:\n")
+        analysis_text.insert(tk.END, f"• {'Equal' if equal_sample_sizes else 'Unequal'} sample sizes\n")
+        if not equal_sample_sizes:
+            analysis_text.insert(tk.END, "• Sizes: " + ", ".join(str(s) for s in sample_sizes) + "\n")
+        analysis_text.insert(tk.END, "\n")
+
+        # Variance homogeneity
+        analysis_text.insert(tk.END, "Variance Homogeneity:\n")
+        analysis_text.insert(tk.END, f"• {'Equal' if equal_variances else 'Unequal'} variances (Levene's test p={levene_p:.4f})\n\n")
+
+        # Test suggestions
+        analysis_text.insert(tk.END, "RECOMMENDED TESTS\n", "heading")
+        analysis_text.insert(tk.END, "-" * 50 + "\n\n")
+
+        if num_datasets == 2:
+            # Two-group comparison
+            all_normal = all(normality_results)
+            
+            if all_normal:
+                if equal_variances:
+                    analysis_text.insert(tk.END, "Primary Recommendation:\n")
+                    analysis_text.insert(tk.END, "• Independent t-test\n")
+                    analysis_text.insert(tk.END, "  Reason: Data is normally distributed with equal variances\n\n")
+                else:
+                    analysis_text.insert(tk.END, "Primary Recommendation:\n")
+                    analysis_text.insert(tk.END, "• Welch's t-test\n")
+                    analysis_text.insert(tk.END, "  Reason: Data is normally distributed but variances are unequal\n\n")
+            else:
+                analysis_text.insert(tk.END, "Primary Recommendation:\n")
+                analysis_text.insert(tk.END, "• Mann-Whitney U test\n")
+                analysis_text.insert(tk.END, "  Reason: Data is not normally distributed\n\n")
+
+            if equal_sample_sizes:
+                analysis_text.insert(tk.END, "Alternative Options:\n")
+                analysis_text.insert(tk.END, "• Wilcoxon signed-rank test (if samples are paired)\n")
+                analysis_text.insert(tk.END, "• Kolmogorov-Smirnov test (to compare entire distributions)\n")
+        else:
+            # Multiple group comparison
+            all_normal = all(normality_results)
+            
+            if all_normal:
+                if equal_variances:
+                    analysis_text.insert(tk.END, "Primary Recommendation:\n")
+                    analysis_text.insert(tk.END, "• One-way ANOVA\n")
+                    analysis_text.insert(tk.END, "  Reason: Data is normally distributed with equal variances\n\n")
+                else:
+                    analysis_text.insert(tk.END, "Primary Recommendation:\n")
+                    analysis_text.insert(tk.END, "• Welch's ANOVA\n")
+                    analysis_text.insert(tk.END, "  Reason: Data is normally distributed but variances are unequal\n\n")
+            else:
+                if equal_sample_sizes:
+                    analysis_text.insert(tk.END, "Primary Recommendation:\n")
+                    analysis_text.insert(tk.END, "• Friedman test\n")
+                    analysis_text.insert(tk.END, "  Reason: Data is not normally distributed but sample sizes are equal\n\n")
+                else:
+                    analysis_text.insert(tk.END, "Primary Recommendation:\n")
+                    analysis_text.insert(tk.END, "• Kruskal-Wallis H-test\n")
+                    analysis_text.insert(tk.END, "  Reason: Data is not normally distributed and sample sizes are unequal\n\n")
+
+        # Additional considerations
+        analysis_text.insert(tk.END, "ADDITIONAL CONSIDERATIONS\n", "heading")
+        analysis_text.insert(tk.END, "-" * 50 + "\n\n")
+
+        if not all_normal:
+            analysis_text.insert(tk.END, "Data Transformation Options:\n")
+            analysis_text.insert(tk.END, "• Consider log transformation for right-skewed data\n")
+            analysis_text.insert(tk.END, "• Consider square root transformation for count data\n")
+            analysis_text.insert(tk.END, "• Consider Box-Cox transformation for complex distributions\n\n")
+
+        if not equal_variances:
+            analysis_text.insert(tk.END, "Variance Considerations:\n")
+            analysis_text.insert(tk.END, "• Use tests that don't assume equal variances\n")
+            analysis_text.insert(tk.END, "• Consider normalizing or standardizing the data\n\n")
+
+        # Apply text tags
+        analysis_text.tag_configure("heading", font=('Segoe UI', 11, 'bold'))
+
+        # Make text read-only
+        analysis_text.config(state=tk.DISABLED)
+
+        # Add buttons frame
+        buttons_frame = ttk.Frame(main_frame)
+        buttons_frame.pack(fill=tk.X, pady=(10, 0))
+
+        # Add Apply Suggestion button
+        def apply_suggestion():
+            if num_datasets == 2:
+                if all_normal:
+                    if equal_variances:
+                        self.test_type_var.set("t_test")
+                    else:
+                        self.test_type_var.set("welch_t_test")
+                else:
+                    self.test_type_var.set("mann_whitney")
+            else:
+                if all_normal:
+                    if equal_variances:
+                        self.test_type_var.set("anova")
+                    else:
+                        self.test_type_var.set("welch_anova")
+                else:
+                    if equal_sample_sizes:
+                        self.test_type_var.set("friedman")
+                    else:
+                        self.test_type_var.set("kruskal")
+            assistant_window.destroy()
+
+        apply_btn = ttk.Button(buttons_frame, text="Apply Suggestion", command=apply_suggestion)
+        apply_btn.pack(side=tk.LEFT, padx=5)
+
+        # Add Close button
+        close_btn = ttk.Button(buttons_frame, text="Close", command=assistant_window.destroy)
+        close_btn.pack(side=tk.RIGHT, padx=5)
+
+        # Center the window
+        assistant_window.transient(self)
+        assistant_window.grab_set()
+        self.wait_window(assistant_window)
 
 
 def main():

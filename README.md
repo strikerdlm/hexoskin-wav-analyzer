@@ -1,6 +1,6 @@
 # Hexoskin WAV File Analyzer
 
-**Version 0.0.2**
+**Version 0.0.3**
 
 **Developed by Diego Malpica MD**  
 Aerospace and Physiology Research, March 2025  
@@ -35,6 +35,14 @@ This project provides tools for loading, analyzing, and visualizing Hexoskin WAV
 - Export statistical results to CSV
 - GUI for interactive data analysis with a tabbed interface
 - Command-line interface for batch processing
+
+## What's New in Version 0.0.3
+
+- Fixed issue with notebook widget initialization to properly display comparisons
+- Improved error handling in post-hoc analysis for multiple dataset comparisons
+- Fixed post-hoc analysis display in statistical comparison results
+- Enhanced consistency in variable naming throughout code
+- Various code optimizations and bug fixes
 
 ## What's New in Version 0.0.2
 

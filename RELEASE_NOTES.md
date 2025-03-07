@@ -1,3 +1,23 @@
+# Hexoskin WAV Analyzer v0.0.3 - Bug Fix and Enhancement Release
+
+**Release Date:** March 2025
+
+## Improvements
+
+- Enhanced consistency in variable naming throughout codebase
+- Improved robustness of comparison functionality
+- Better handling of multiple dataset comparisons
+- Optimized code structure for maintainability
+
+## Bug Fixes
+
+- Fixed critical issue with notebook widget initialization
+- Resolved problem with post-hoc analysis not displaying in comparison results
+- Fixed variable naming inconsistencies in post-hoc analysis code
+- Corrected indentation errors in various functions
+
+---
+
 # Hexoskin WAV Analyzer v0.0.2 - Statistical Enhancement Release
 
 **Release Date:** March 2025
