@@ -23,6 +23,8 @@ ENV/
 # Jupyter Notebook
 .ipynb_checkpoints
 *.ipynb
+# But allow ipynb files in working_folder
+!working_folder/**/*.ipynb
 
 # Data files
 *.csv
@@ -30,6 +32,10 @@ ENV/
 *.wav
 Data backup/
 Old plots/
+# But allow csv files in working_folder
+!working_folder/**/*.csv
+!working_folder/**/*.xlsx
+!working_folder/**/*.wav
 
 # Explicitly exclude Sol folders
 Sol*/
@@ -51,3 +57,9 @@ fix_data_analysis.py
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Local Barotrauma environment setup
+setup_barotrauma_env.py
+activate_barotrauma.bat
+activate_barotrauma.ps1
+BAROTRAUMA_SETUP.md
