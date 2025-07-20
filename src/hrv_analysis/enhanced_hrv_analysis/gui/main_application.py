@@ -116,15 +116,9 @@ class HRVAnalysisApp:
         
         self._update_init_progress(15, "Initializing async processor...")
         
-        # Initialize asynchronous processor for non-blocking analysis
-        self.async_processor = SafeAsyncProcessor(
-            max_workers=2,  # Conservative for HRV analysis
-            default_timeout=300.0,  # 5 minute timeout
-            progress_callback=self._update_progress,
-            status_callback=self._update_status,
-            result_persistence_dir=str(cache_dir / "async_results"),
-            allow_background_processing=False  # Default to disabled for safety
-        )
+        # TEMPORARILY DISABLED: Async processor to eliminate threading issues
+        self.async_processor = None
+        logger.info("Async processing disabled to prevent threading issues")
         
         self._update_init_progress(20, "Loading settings...")
         
@@ -302,24 +296,30 @@ class HRVAnalysisApp:
             row=0, column=0, columnspan=2, sticky=tk.W, pady=5)
         
         self.domain_vars = {}
-        domains = [('Time Domain', HRVDomain.TIME),
-                  ('Frequency Domain', HRVDomain.FREQUENCY), 
-                  ('Nonlinear', HRVDomain.NONLINEAR),
-                  ('Parasympathetic', HRVDomain.PARASYMPATHETIC),
-                  ('Sympathetic', HRVDomain.SYMPATHETIC)]
+        domains = [('Time Domain', HRVDomain.TIME, True),
+                  ('Frequency Domain', HRVDomain.FREQUENCY, True), 
+                  ('⚠️ Nonlinear (SLOW)', HRVDomain.NONLINEAR, False),
+                  ('Parasympathetic', HRVDomain.PARASYMPATHETIC, True),
+                  ('Sympathetic', HRVDomain.SYMPATHETIC, True)]
         
-        for i, (label, domain) in enumerate(domains):
-            var = tk.BooleanVar(value=True)
+        for i, (label, domain, default_enabled) in enumerate(domains):
+            var = tk.BooleanVar(value=default_enabled)  # Nonlinear disabled by default
             self.domain_vars[domain] = var
             
-            # Add warning for nonlinear analysis
+            # Add special styling for nonlinear analysis
             if domain == HRVDomain.NONLINEAR:
-                checkbox_text = f"{label} ⏱️ (Takes time - see status below)"
-            else:
-                checkbox_text = label
+                checkbox = ttk.Checkbutton(config_frame, text=label, variable=var)
+                checkbox.grid(row=i+1, column=0, sticky=tk.W, padx=10)
                 
-            ttk.Checkbutton(config_frame, text=checkbox_text, variable=var).grid(
-                row=i+1, column=0, sticky=tk.W, padx=10)
+                # Add warning label
+                warning_label = ttk.Label(config_frame, 
+                                        text="⚠️ WARNING: Very slow! May take 5-10 minutes per subject",
+                                        font=('Arial', 8), 
+                                        foreground='red')
+                warning_label.grid(row=i+1, column=1, sticky=tk.W, padx=(10, 0))
+            else:
+                ttk.Checkbutton(config_frame, text=label, variable=var).grid(
+                    row=i+1, column=0, sticky=tk.W, padx=10)
         
         # Add processing time warning
         warning_frame = ttk.Frame(config_frame)
@@ -363,22 +363,42 @@ class HRVAnalysisApp:
         control_frame = ttk.LabelFrame(self.left_panel, text="Processing Controls", padding="5")
         control_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
-        # Process button
-        self.process_button = ttk.Button(control_frame, text="Run Analysis", 
-                                        command=self._run_analysis,
-                                        style='Primary.TButton')
-        self.process_button.grid(row=0, column=0, sticky=tk.W, pady=5)
+        # Process buttons frame
+        button_frame = ttk.Frame(control_frame)
+        button_frame.grid(row=0, column=0, sticky=tk.W, pady=5)
+        
+        # Analysis button (synchronous only)
+        self.simple_process_button = ttk.Button(button_frame, text="Run HRV Analysis", 
+                                               command=self._run_simple_analysis,
+                                               style='Primary.TButton')
+        self.simple_process_button.grid(row=0, column=0, sticky=tk.W)
+        
+        # Advanced Analysis button (DISABLED due to threading issues)
+        self.process_button = ttk.Button(button_frame, text="Advanced Analysis (Disabled)", 
+                                        command=self._show_advanced_disabled_message,
+                                        style='Secondary.TButton',
+                                        state='disabled')
+        self.process_button.grid(row=0, column=1, sticky=tk.W, padx=(10, 0))
+        
+        # Analysis help label
+        help_label = ttk.Label(control_frame, 
+                              text="💡 HRV Analysis: Runs while GUI is open - Real-time progress updates\n" +
+                                   "⚠️  Analysis stops if you close the application (no background processing)\n" +
+                                   "🧠 Nonlinear analysis disabled by default (enable if needed, but very slow)",
+                              font=('Arial', 8),
+                              foreground='gray')
+        help_label.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(20, 0))
         
         # Progress bar
         self.progress_var = tk.DoubleVar()
         self.progress_bar = ttk.Progressbar(control_frame, variable=self.progress_var,
                                           mode='determinate', length=200)
-        self.progress_bar.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=5)
+        self.progress_bar.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), padx=(0, 0), pady=5)
         control_frame.columnconfigure(1, weight=1)
         
         # Async Status Display (NEW)
-        status_frame = ttk.LabelFrame(control_frame, text="Async Processing Status", padding="3")
-        status_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 5))
+        status_frame = ttk.LabelFrame(control_frame, text="Processing Status", padding="3")
+        status_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 5))
         
         # Status text label
         self.async_status_var = tk.StringVar(value="Ready")
@@ -619,15 +639,9 @@ class HRVAnalysisApp:
                 # Cache settings are applied at initialization, would need cache restart for changes
                 pass
             
-            # Update async processor settings
-            if hasattr(self, 'async_processor') and settings.get('async_enabled', True):
-                # Async settings are applied at initialization, would need processor restart for changes
-                self.analysis_timeout = settings.get('async_timeout_seconds', 300.0)
-                
-                # Update background processing setting
-                allow_background = settings.get('async_allow_background_processing', False)
-                self.async_processor.allow_background_processing = allow_background
-                logger.info(f"Background processing: {'Enabled' if allow_background else 'Disabled'}")
+            # Update analysis settings
+            self.analysis_timeout = settings.get('analysis_timeout_seconds', 300.0)
+            logger.info("Analysis will run only while GUI is open (no background processing)")
             
             # Update analysis settings
             if hasattr(self, 'advanced_stats'):
@@ -1354,44 +1368,12 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         logger.info(f"Selected subject: {self.current_subject}")
         
     def _run_analysis(self):
-        """Run HRV analysis in a separate async thread to prevent GUI blocking."""
-        if self.analysis_running:
-            messagebox.showwarning("Warning", "Analysis is already running")
-            return
-            
-        if self.loaded_data is None:
-            messagebox.showwarning("Warning", "No data loaded")
-            return
-            
-        # Start async processor if not running
-        if not self.async_processor._is_running:
-            self.async_processor.start()
-            
-        self.analysis_running = True
-        self.process_button.configure(state='disabled')
-        self._analysis_start_time = time.time()  # Track start time for better progress messages
-        
-        # Submit analysis task to async processor
-        analysis_task_id = f"hrv_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        
-        # Capture GUI state before async execution (must be done in main thread)
-        analysis_config = self._capture_analysis_config()
-        
-        success = self.async_processor.submit_task(
-            task_id=analysis_task_id,
-            func=self._perform_analysis_async,
-            analysis_config=analysis_config,  # Pass config as parameter
-            timeout=self.analysis_timeout
+        """Run HRV analysis (DISABLED - redirects to simple analysis)."""
+        messagebox.showinfo(
+            "Advanced Analysis Disabled", 
+            "Advanced Analysis is temporarily disabled.\n\nUsing Simple Analysis instead..."
         )
-        
-        if success:
-            self.current_analysis_tasks.append(analysis_task_id)
-            self._update_status("Analysis submitted to async processor...")
-            self._monitor_analysis_task(analysis_task_id)
-        else:
-            self.analysis_running = False
-            self.process_button.configure(state='normal')
-            messagebox.showerror("Error", "Failed to submit analysis task")
+        self._run_simple_analysis()
     
     def _monitor_analysis_task(self, task_id: str):
         """Monitor async analysis task progress with enhanced status messaging."""
@@ -1470,6 +1452,153 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             self._update_progress(0, "Ready")
             if task_id in self.current_analysis_tasks:
                 self.current_analysis_tasks.remove(task_id)
+    
+    def _run_simple_analysis(self):
+        """Run HRV analysis synchronously in the main thread (simple, no threading issues)."""
+        if self.analysis_running:
+            messagebox.showwarning("Warning", "Analysis is already running")
+            return
+            
+        if self.loaded_data is None:
+            messagebox.showwarning("Warning", "No data loaded")
+            return
+            
+        # Set analysis state
+        self.analysis_running = True
+        self.simple_process_button.configure(state='disabled')
+        self.process_button.configure(state='disabled')
+        
+        try:
+            # Capture analysis configuration
+            analysis_config = self._capture_analysis_config()
+            selected_domains = analysis_config.get('selected_domains', [])
+            
+            if not selected_domains:
+                messagebox.showwarning("Warning", "No analysis domains selected")
+                return
+            
+            # Check if nonlinear analysis is selected and warn user
+            has_nonlinear = any(domain == HRVDomain.NONLINEAR for domain in selected_domains)
+            if has_nonlinear:
+                result = messagebox.askyesno(
+                    "Nonlinear Analysis Selected",
+                    "⚠️ WARNING: Nonlinear analysis is enabled!\n\n" +
+                    "This will include:\n" +
+                    "• Sample Entropy calculations (very slow)\n" +
+                    "• Approximate Entropy calculations (slow)\n" +
+                    "• Detrended Fluctuation Analysis (moderate)\n\n" +
+                    "Expected time: 5-10 minutes per subject\n" +
+                    "Total estimated time: " + str(len(self._prepare_analysis_data_from_config(analysis_config)) * 7) + " minutes\n\n" +
+                    "The GUI may appear frozen but the analysis IS running.\n" +
+                    "Check the status display for progress updates.\n\n" +
+                    "Do you want to continue with nonlinear analysis?"
+                )
+                if not result:
+                    return
+            
+            # Get analysis data
+            analysis_data = self._prepare_analysis_data_from_config(analysis_config)
+            if not analysis_data:
+                messagebox.showwarning("Warning", "No analysis data prepared")
+                return
+            
+            logger.info(f"Starting simple analysis of {len(analysis_data)} subjects")
+            self._update_status("Starting simple analysis...")
+            self._update_progress(5, "Processing subjects...")
+            
+            # Process each subject synchronously
+            all_results = {}
+            total_subjects = len(analysis_data)
+            
+            for i, (key, data_segment) in enumerate(analysis_data.items()):
+                try:
+                    # Update progress with domain information
+                    progress_pct = (i / total_subjects) * 85 + 10  # 10-95% range
+                    
+                    # Check if nonlinear analysis is enabled and warn user
+                    nonlinear_enabled = analysis_config.get('selected_domains', [])
+                    has_nonlinear = any(domain == HRVDomain.NONLINEAR for domain in nonlinear_enabled)
+                    
+                    if has_nonlinear:
+                        status_msg = f"Processing {key}... ⚠️ NONLINEAR ANALYSIS - This may take several minutes"
+                        self.async_status_var.set("⚠️ NONLINEAR ANALYSIS RUNNING - GUI may appear frozen but it's working")
+                    else:
+                        status_msg = f"Processing {key}... (Fast analysis)"
+                        self.async_status_var.set("✅ Running fast analysis - Should complete quickly")
+                    
+                    self._update_progress(progress_pct, status_msg)
+                    self.root.update_idletasks()  # Allow GUI to update
+                    
+                    # Additional GUI updates during processing
+                    for _ in range(3):  # Multiple updates to keep GUI responsive
+                        self.root.update()
+                        import time
+                        time.sleep(0.1)  # Small delay to process GUI events
+                    
+                    # Use cached analysis (this is now thread-safe)
+                    result = self._perform_cached_analysis_from_config(key, data_segment, selected_domains, analysis_config)
+                    
+                    if result is not None:
+                        all_results[key] = result
+                        logger.info(f"Simple: Successfully processed {key}")
+                        self.async_status_var.set(f"✅ Completed {key}")
+                    else:
+                        logger.warning(f"Simple: Failed to process {key}")
+                        self.async_status_var.set(f"❌ Failed {key}")
+                    
+                except Exception as e:
+                    logger.error(f"Simple: Error processing {key}: {e}")
+                    self.async_status_var.set(f"❌ Error processing {key}: {str(e)[:50]}...")
+                    # Continue with next subject instead of stopping entire analysis
+                    self.root.update_idletasks()  # Keep GUI responsive
+                    continue
+            
+            if not all_results:
+                messagebox.showerror("Error", "No subjects could be processed successfully")
+                return
+            
+            # Store results and update display
+            self.analysis_results = all_results
+            self._update_progress(95, "Updating displays...")
+            self.root.update_idletasks()
+            
+            # Update result displays
+            self._update_results_display()
+            self._update_plots_display()
+            
+            # Complete
+            self._update_progress(100, "Analysis complete!")
+            logger.info(f"Simple analysis completed: {len(all_results)} subjects processed")
+            
+            messagebox.showinfo("Success", f"HRV analysis completed successfully!\n\n" +
+                              f"✅ {len(all_results)} subjects processed\n" +
+                              f"✅ All HRV domains computed\n" +
+                              f"✅ Results ready for visualization")
+            
+        except Exception as e:
+            logger.error(f"Error in simple analysis: {e}")
+            messagebox.showerror("Error", f"Analysis failed: {e}")
+            
+        finally:
+            # Reset state
+            self.analysis_running = False
+            self.simple_process_button.configure(state='normal')
+            self.process_button.configure(state='normal')
+            self._update_progress(0, "Ready")
+    
+    def _show_advanced_disabled_message(self):
+        """Show message explaining why advanced analysis is disabled."""
+        messagebox.showinfo(
+            "Advanced Analysis Disabled",
+            "Advanced Analysis is disabled to eliminate threading issues.\n\n" +
+            "The 'Run HRV Analysis' button provides all analysis capabilities:\n" +
+            "• All HRV metrics and domains\n" +
+            "• Real-time progress updates\n" +
+            "• Reliable processing in main thread\n" +
+            "• No background processing complexity\n\n" +
+            "Analysis runs only while the GUI is open and stops\n" +
+            "immediately if you close the application."
+        )
     
     def _capture_analysis_config(self) -> Dict[str, Any]:
         """
@@ -1551,8 +1680,16 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 try:
                     # Update progress through the callback (thread-safe)
                     progress_pct = (i / total_subjects) * 80 + 10  # 10-90% range
-                    if self.async_processor.progress_callback:
-                        self.async_processor.progress_callback(f"Processing {key}...", progress_pct)
+                    # Use the safe callback mechanism instead of direct callback
+                    if self.async_processor.progress_callback and self.async_processor._gui_connected:
+                        try:
+                            self.async_processor.progress_callback(progress_pct, f"Processing {key}...")
+                        except Exception as e:
+                            if "main thread is not in main loop" in str(e):
+                                logger.warning("Progress callback failed - GUI unavailable, continuing analysis")
+                                self.async_processor._gui_connected = False
+                            else:
+                                logger.warning(f"Progress callback error: {e}")
                     
                     # Use cached analysis with config
                     result = self._perform_cached_analysis_from_config(key, data_segment, selected_domains, analysis_config)
@@ -1572,14 +1709,20 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             
             # Advanced analysis if requested
             if analysis_config.get('clustering_enabled', False):
-                if self.async_processor.progress_callback:
-                    self.async_processor.progress_callback("Running clustering analysis...", 90)
-                self._perform_clustering_analysis(all_results)
+                try:
+                    if self.async_processor.progress_callback and self.async_processor._gui_connected:
+                        self.async_processor.progress_callback(90, "Running clustering analysis...")
+                    self._perform_clustering_analysis(all_results)
+                except Exception as e:
+                    logger.warning(f"Clustering analysis failed: {e}")
                 
             if analysis_config.get('forecasting_enabled', False):
-                if self.async_processor.progress_callback:
-                    self.async_processor.progress_callback("Running forecasting analysis...", 95)
-                self._perform_forecasting_analysis(all_results)
+                try:
+                    if self.async_processor.progress_callback and self.async_processor._gui_connected:
+                        self.async_processor.progress_callback(95, "Running forecasting analysis...")
+                    self._perform_forecasting_analysis(all_results)
+                except Exception as e:
+                    logger.warning(f"Forecasting analysis failed: {e}")
             
             logger.info(f"Async analysis completed: {len(all_results)} subjects processed")
             return all_results
@@ -2625,9 +2768,27 @@ Special Thanks:
         Returns:
             Analysis results dictionary or None if analysis failed
         """
-        # Capture current GUI state for legacy compatibility
-        current_config = self._capture_analysis_config()
-        return self._perform_cached_analysis_from_config(subject_key, data_segment, selected_domains, current_config)
+        # Check if we're in the main thread - if not, we can't capture GUI state safely
+        import threading
+        if threading.current_thread() != threading.main_thread():
+            # We're in a background thread, use a default config to avoid GUI access
+            logger.warning("_perform_cached_analysis called from background thread - using default config")
+            default_config = {
+                'selected_domains': selected_domains,
+                'fast_mode': False,
+                'bootstrap_ci': False,
+                'clustering_enabled': False,
+                'forecasting_enabled': False,
+                'current_subject': None,
+                'max_bootstrap_samples': 50,
+                'analysis_timeout': 300,
+                'cache_version': '2.1'
+            }
+            return self._perform_cached_analysis_from_config(subject_key, data_segment, selected_domains, default_config)
+        else:
+            # We're in the main thread, safe to capture GUI state
+            current_config = self._capture_analysis_config()
+            return self._perform_cached_analysis_from_config(subject_key, data_segment, selected_domains, current_config)
     
     def _perform_cached_analysis_from_config(self, subject_key: str, data_segment: pd.DataFrame, selected_domains: List[HRVDomain], analysis_config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
@@ -2707,14 +2868,14 @@ Special Thanks:
                     'subject_key': subject_key
                 }
             
-            # Execute with timeout protection
+            # Execute with timeout protection (reduced timeout for reliability)
             result = None
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(process_subject)
                 try:
-                    result = future.result(timeout=60)  # 60 second timeout per subject
+                    result = future.result(timeout=30)  # 30 second timeout per subject (reduced)
                 except FutureTimeoutError:
-                    logger.warning(f"⏱️ Timeout processing {subject_key}, skipping...")
+                    logger.warning(f"⏱️ Timeout processing {subject_key} after 30 seconds, skipping...")
                     return None
             
             if result is None:
@@ -2781,81 +2942,32 @@ Special Thanks:
             logger.error(f"Error setting up performance monitor: {e}")
     
     def _on_window_closing(self):
-        """Handle window closing event with background processing management."""
+        """Handle window closing event - stops any running analysis."""
         try:
             # Check if analysis is currently running
-            if self.analysis_running and hasattr(self, 'async_processor'):
-                # Check background processing setting
-                allow_background = self.async_processor.allow_background_processing
+            if self.analysis_running:
+                # Always stop analysis when closing - no background processing
+                result = messagebox.askyesno(
+                    "Analysis in Progress",
+                    "HRV analysis is currently running.\n\n" +
+                    "Closing the application will stop the analysis.\n" +
+                    "Any progress will be lost.\n\n" +
+                    "Do you want to stop the analysis and close?"
+                )
                 
-                if allow_background:
-                    # Ask user what they want to do
-                    result = messagebox.askyesnocancel(
-                        "Analysis in Progress",
-                        "HRV analysis is currently running.\n\n" +
-                        "Background processing is enabled. You can:\n\n" +
-                        "• YES: Close GUI but continue processing in background\n" +
-                        "• NO: Stop analysis and close application\n" +
-                        "• CANCEL: Keep application open\n\n" +
-                        "If you choose YES, results will be automatically saved\n" +
-                        "and you'll be notified when complete."
-                    )
-                    
-                    if result is True:  # YES - background processing
-                        logger.info("User chose to continue analysis in background")
-                        
-                        # Set GUI as disconnected
-                        self._gui_active = False
-                        self.async_processor.set_gui_connection_status(False)
-                        
-                        # Show final message
-                        messagebox.showinfo(
-                            "Background Processing Active",
-                            "Analysis will continue in the background.\n\n" +
-                            "• Results will be automatically saved\n" +
-                            "• You can safely close this window\n" +
-                            "• Restart the application later to see results\n" +
-                            "• Check log files for progress updates"
-                        )
-                        
-                        self._shutdown_in_progress = True
-                        self.root.quit()
-                        return
-                        
-                    elif result is False:  # NO - stop analysis
-                        logger.info("User chose to stop analysis and close")
-                        self._shutdown_analysis()
-                        self._shutdown_in_progress = True
-                        # Add a small delay to allow shutdown to complete
-                        self.root.after(100, self.root.quit)
-                        return
-                        
-                    else:  # CANCEL - keep open
-                        logger.info("User chose to keep application open")
-                        return
-                        
+                if result:
+                    logger.info("User confirmed stopping analysis and closing")
+                    self._shutdown_analysis()
+                    self._shutdown_in_progress = True
+                    self.root.after(100, self.root.quit)
                 else:
-                    # Background processing disabled - ask to stop analysis
-                    result = messagebox.askyesno(
-                        "Analysis in Progress",
-                        "HRV analysis is currently running.\n\n" +
-                        "Background processing is disabled.\n" +
-                        "Closing now will stop the analysis.\n\n" +
-                        "Do you want to close anyway?\n" +
-                        "(Progress will be lost)"
-                    )
-                    
-                    if result:
-                        logger.info("User chose to stop analysis and close")
-                        self._shutdown_analysis()
-                        self._shutdown_in_progress = True
-                        self.root.quit()
+                    logger.info("User cancelled closing - keeping application open")
                     return
             else:
-                # No analysis running - normal close
-                if messagebox.askyesno("Quit", "Are you sure you want to quit?"):
-                    self._shutdown_in_progress = True
-                    self.root.quit()
+                # No analysis running, close normally
+                logger.info("Closing application - no analysis running")
+                self._shutdown_in_progress = True
+                self.root.quit()
                     
         except Exception as e:
             logger.error(f"Error in window closing handler: {e}")
@@ -2869,32 +2981,34 @@ Special Thanks:
             # Set GUI as disconnected
             self._gui_active = False
             
-            # Shutdown async processor
-            if hasattr(self, 'async_processor') and self.async_processor._is_running:
-                logger.info("Shutting down async processor...")
-                
-                # Set GUI connection status to false to prevent callback errors
-                self.async_processor.set_gui_connection_status(False)
-                
-                # Update status safely
-                try:
-                    if hasattr(self, 'async_status_var'):
-                        self.async_status_var.set("Shutting down...")
-                except Exception as e:
-                    logger.debug(f"Could not update status during shutdown: {e}")
-                
-                # Stop processor
-                self.async_processor.shutdown(wait_for_completion=False, timeout=10.0)
-                
-                # Reset state
-                self.analysis_running = False
-                try:
-                    if hasattr(self, 'process_button'):
-                        self.process_button.configure(state='normal')
-                except Exception as e:
-                    logger.debug(f"Could not update button during shutdown: {e}")
+            # Shutdown async processor (if enabled)
+            if hasattr(self, 'async_processor') and self.async_processor is not None:
+                if hasattr(self.async_processor, '_is_running') and self.async_processor._is_running:
+                    logger.info("Shutting down async processor...")
                     
-                logger.info("Analysis shutdown complete")
+                    # Set GUI connection status to false to prevent callback errors
+                    self.async_processor.set_gui_connection_status(False)
+                    
+                    # Update status safely
+                    try:
+                        if hasattr(self, 'async_status_var'):
+                            self.async_status_var.set("Shutting down...")
+                    except Exception as e:
+                        logger.debug(f"Could not update status during shutdown: {e}")
+                    
+                    # Stop processor
+                    self.async_processor.shutdown(wait_for_completion=False, timeout=10.0)
+                    logger.info("Analysis shutdown complete")
+            
+            # Reset state
+            self.analysis_running = False
+            try:
+                if hasattr(self, 'process_button'):
+                    self.process_button.configure(state='normal')
+                if hasattr(self, 'simple_process_button'):
+                    self.simple_process_button.configure(state='normal')
+            except Exception as e:
+                logger.debug(f"Could not update buttons during shutdown: {e}")
             
             # Shutdown performance monitor
             if hasattr(self, 'performance_monitor') and self.performance_monitor:
@@ -2911,7 +3025,7 @@ Special Thanks:
         if event.widget == self.root:  # Only handle main window events
             if not self._gui_active:
                 self._gui_active = True
-                if hasattr(self, 'async_processor'):
+                if hasattr(self, 'async_processor') and self.async_processor is not None:
                     self.async_processor.set_gui_connection_status(True)
                 if hasattr(self, 'performance_monitor') and self.performance_monitor:
                     self.performance_monitor.set_gui_connection_status(True)
