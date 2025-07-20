@@ -56,32 +56,25 @@ class SplashScreen:
         # Title
         title_label = tk.Label(
             main_frame,
-            text="Enhanced HRV Analysis System",
-            font=('Arial', 24, 'bold'),
+            text="HRV Analysis for the Valquiria Analog Space Mission Simulation",
+            font=('Arial', 20, 'bold'),
             fg='#ECF0F1',
-            bg='#2C3E50'
+            bg='#2C3E50',
+            wraplength=500,
+            justify='center'
         )
-        title_label.pack(pady=(0, 10))
+        title_label.pack(pady=(0, 20))
         
-        # Subtitle
-        subtitle_label = tk.Label(
+        # Author and organization
+        author_label = tk.Label(
             main_frame,
-            text="Valquiria Crew Space Simulation Dataset",
-            font=('Arial', 14),
-            fg='#BDC3C7',
-            bg='#2C3E50'
-        )
-        subtitle_label.pack(pady=(0, 30))
-        
-        # Status label
-        self.status_label = tk.Label(
-            main_frame,
-            text="Initializing application...",
+            text="by Dr. Diego Malpica MD\nDirectorate of Aerospace Medicine\nColombian Aerospace Force\nAerospace Scientific Department",
             font=('Arial', 12),
-            fg='#3498DB',
-            bg='#2C3E50'
+            fg='#BDC3C7',
+            bg='#2C3E50',
+            justify='center'
         )
-        self.status_label.pack(pady=(0, 20))
+        author_label.pack(pady=(0, 30))
         
         # Progress bar frame
         progress_frame = tk.Frame(main_frame, bg='#2C3E50')
@@ -112,42 +105,27 @@ class SplashScreen:
         self.percentage_label = tk.Label(
             main_frame,
             text="0%",
-            font=('Arial', 10, 'bold'),
+            font=('Arial', 16, 'bold'),
             fg='#ECF0F1',
             bg='#2C3E50'
         )
-        self.percentage_label.pack()
-        
-        # Details text
-        self.details_label = tk.Label(
-            main_frame,
-            text="Loading system components...",
-            font=('Arial', 9),
-            fg='#95A5A6',
-            bg='#2C3E50',
-            wraplength=500,
-            justify='center'
-        )
-        self.details_label.pack(pady=(10, 0))
+        self.percentage_label.pack(pady=(10, 0))
         
         # Version info
         version_label = tk.Label(
             main_frame,
-            text="Dr. Diego Malpica - DIMAE / FAC / Colombia",
+            text="Colombia - 2025",
             font=('Arial', 8),
             fg='#7F8C8D',
             bg='#2C3E50'
         )
         version_label.pack(side='bottom', pady=(20, 0))
         
-    def update_progress(self, percentage, status_text, details_text=""):
-        """Update progress bar and status text."""
+    def update_progress(self, percentage, status_text="", details_text=""):
+        """Update progress bar and percentage display."""
         if self.splash and self.splash.winfo_exists():
             self.progress_var.set(percentage)
-            self.status_label.config(text=status_text)
             self.percentage_label.config(text=f"{int(percentage)}%")
-            if details_text:
-                self.details_label.config(text=details_text)
             self.splash.update_idletasks()
     
     def destroy(self):
@@ -269,22 +247,22 @@ def load_application_with_progress(splash_screen, logger):
     """Load the main application with progress updates."""
     try:
         # Step 1: Check dependencies
-        splash_screen.update_progress(10, "Checking dependencies...", "Verifying required Python packages")
+        splash_screen.update_progress(10)
         if not check_dependencies():
             logger.error("Cannot start application due to missing dependencies")
             return None
         
         # Step 2: Import GUI components
-        splash_screen.update_progress(25, "Loading GUI components...", "Importing Tkinter and interface modules")
+        splash_screen.update_progress(25)
         from gui.main_application import HRVAnalysisApp
         
         # Step 3: Create main window
-        splash_screen.update_progress(40, "Creating main window...", "Initializing Tkinter root window")
+        splash_screen.update_progress(40)
         root = tk.Tk()
         root.withdraw()  # Hide initially
         
         # Step 4: Set window icon
-        splash_screen.update_progress(50, "Setting up interface...", "Configuring window properties")
+        splash_screen.update_progress(50)
         try:
             icon_path = current_dir / "assets" / "hrv_icon.ico"
             if icon_path.exists():
@@ -293,34 +271,37 @@ def load_application_with_progress(splash_screen, logger):
             pass
         
         # Step 5: Initialize application core
-        splash_screen.update_progress(60, "Initializing HRV processor...", "Setting up signal processing and analysis engines")
+        splash_screen.update_progress(60)
         
         # Custom progress callback for app initialization
         def app_progress_callback(percentage, message):
             # Map app loading progress to remaining 40% (60-100%)
             mapped_percentage = 60 + (percentage * 0.4)
-            splash_screen.update_progress(mapped_percentage, "Loading application data...", message)
+            splash_screen.update_progress(mapped_percentage)
         
         # Step 6: Create application with progress tracking
-        splash_screen.update_progress(70, "Loading data components...", "Initializing data loaders and processors")
+        splash_screen.update_progress(70)
         app = HRVAnalysisApp(root, progress_callback=app_progress_callback)
         
-        # Step 7: Finalize setup
-        splash_screen.update_progress(90, "Finalizing setup...", "Preparing user interface")
+        # Step 7: Finalize setup and maximize window
+        splash_screen.update_progress(90)
+        
+        # Maximize the window
+        root.state('zoomed')  # Windows-specific maximization
         root.deiconify()  # Show the main window
         
-        splash_screen.update_progress(100, "Ready!", "HRV Analysis System loaded successfully")
+        splash_screen.update_progress(100)
         time.sleep(0.5)  # Brief pause to show completion
         
         return root, app
         
     except ImportError as e:
         logger.error(f"Failed to import GUI components: {e}")
-        splash_screen.update_progress(0, "Error: Failed to load components", str(e))
+        splash_screen.update_progress(0)
         return None
     except Exception as e:
         logger.error(f"Error loading application: {e}")
-        splash_screen.update_progress(0, "Error: Application failed to load", str(e))
+        splash_screen.update_progress(0)
         return None
 
 def main():
@@ -337,7 +318,7 @@ def main():
         
         if result is None:
             logger.error("Failed to load application")
-            splash.update_progress(0, "Failed to load application", "Check console for details")
+            splash.update_progress(0)
             time.sleep(3)
             splash.destroy()
             safe_print("Press Enter to exit...")
