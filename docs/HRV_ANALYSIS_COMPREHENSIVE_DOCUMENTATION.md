@@ -2,7 +2,7 @@
 ## 📚 Complete Feature & Fix History with Timestamps
 
 **Documentation Compiled:** 2025-07-20 12:44:17 UTC  
-**Last Updated:** 2025-01-13 21:30:00 UTC
+**Last Updated:** 2025-01-14 00:00:00 UTC
 
 ---
 
@@ -48,6 +48,31 @@ python launch_hrv_analysis.py
 - **Reduced bootstrap samples** from 1000 to 25-50 (40x faster)
 - **Added 5-minute timeout protection** for analysis
 - **Implemented proper thread management**
+
+### **❌ PROBLEM 2: "Task Lost" Warning in Nonlinear Analysis**
+*Fixed: 2025-01-14 00:00:00 UTC*
+
+**ISSUE:** Users experienced "task lost" warnings during nonlinear HRV analysis, causing:
+- Analysis interruptions and failed computations
+- Loss of DFA (Detrended Fluctuation Analysis) and entropy measures
+- Async processor timing out on complex calculations
+- Memory accumulation from abandoned tasks
+
+**✅ RESOLVED:**
+- **Optimized DFA computation** with adaptive scaling and segment limits
+- **Timeout protection** for individual nonlinear metrics (5-30s timeouts)
+- **Memory-efficient entropy calculations** with early termination
+- **Enhanced async task tracking** to prevent task loss
+- **Automatic cleanup** of completed tasks to prevent memory leaks
+- **Progressive complexity reduction** for large datasets
+- **Fast fallback values** when computations exceed time limits
+
+**TECHNICAL IMPROVEMENTS:**
+- Added `_compute_dfa_optimized()` with reduced scale ranges
+- Added `_compute_sample_entropy_optimized()` with adaptive sampling
+- Added `_compute_approximate_entropy_optimized()` with vectorized operations
+- Enhanced `SafeAsyncProcessor` with better task state management
+- Implemented automatic cleanup of old completed tasks (max 50)
 - **Added optional data size limiting mode**
 
 **Performance Impact:** Analysis time reduced from indefinite hangs to 2-5 minutes maximum

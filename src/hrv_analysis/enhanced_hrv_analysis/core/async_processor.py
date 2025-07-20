@@ -99,6 +99,11 @@ class SafeAsyncProcessor:
         self._completed_count = 0
         self._failed_count = 0
         
+        # Cleanup settings
+        self._max_completed_tasks = 50  # Maximum completed tasks to keep in memory
+        self._cleanup_interval = 300  # Cleanup every 5 minutes
+        self._last_cleanup = time.time()
+        
         logger.info(f"SafeAsyncProcessor initialized with {max_workers} workers")
         
     def start(self):
@@ -215,11 +220,53 @@ class SafeAsyncProcessor:
         return True
         
     def get_task_status(self, task_id: str) -> Optional[ProcessingState]:
-        """Get the current status of a task."""
+        """Get the current status of a task with enhanced tracking."""
+        # Check active tasks first
         if task_id in self._active_tasks:
-            return self._active_tasks[task_id].state
+            task = self._active_tasks[task_id]
+            # Double-check task hasn't been abandoned
+            if task.start_time and (time.time() - task.start_time) > task.timeout_seconds + 30:
+                # Task has been running too long, mark as timeout
+                logger.warning(f"Task {task_id} exceeded timeout, marking as timeout")
+                task.state = ProcessingState.TIMEOUT
+                task.error = TimeoutError(f"Task exceeded timeout of {task.timeout_seconds}s")
+                task.end_time = time.time()
+                self._completed_tasks[task_id] = self._active_tasks.pop(task_id)
+                return ProcessingState.TIMEOUT
+            return task.state
+        
+        # Check completed tasks
         elif task_id in self._completed_tasks:
             return self._completed_tasks[task_id].state
+        
+        # Check if task is still in queue (pending)
+        try:
+            # This is a bit expensive but necessary for proper tracking
+            queue_copy = []
+            found_in_queue = False
+            
+            # Temporarily drain queue to check for task
+            try:
+                while True:
+                    task = self._task_queue.get_nowait()
+                    queue_copy.append(task)
+                    if task.task_id == task_id:
+                        found_in_queue = True
+            except Empty:
+                pass
+            
+            # Put all tasks back in queue
+            for task in queue_copy:
+                self._task_queue.put(task)
+            
+            if found_in_queue:
+                return ProcessingState.PENDING
+                
+        except Exception as e:
+            logger.warning(f"Error checking queue for task {task_id}: {e}")
+        
+        # Task truly not found
+        logger.warning(f"Task {task_id} not found in any collection")
         return None
         
     def get_task_result(self, task_id: str) -> Any:
@@ -257,6 +304,10 @@ class SafeAsyncProcessor:
         
         while self._is_running:
             try:
+                # Periodic cleanup of old completed tasks
+                if time.time() - self._last_cleanup > self._cleanup_interval:
+                    self._cleanup_completed_tasks()
+                    
                 # Get task from queue with timeout
                 try:
                     task = self._task_queue.get(timeout=1.0)
@@ -337,6 +388,43 @@ class SafeAsyncProcessor:
         except Exception as e:
             logger.error(f"Error executing task {task.task_id}: {e}")
             raise
+
+
+    def _cleanup_completed_tasks(self):
+        """
+        Clean up old completed tasks to prevent memory accumulation.
+        
+        MEMORY MANAGEMENT:
+        - Removes oldest completed tasks when limit is exceeded
+        - Preserves recent task results for retrieval
+        - Logs cleanup statistics
+        """
+        try:
+            current_count = len(self._completed_tasks)
+            
+            if current_count <= self._max_completed_tasks:
+                self._last_cleanup = time.time()
+                return
+                
+            # Sort by completion time and keep only recent tasks
+            sorted_tasks = sorted(
+                self._completed_tasks.items(), 
+                key=lambda x: x[1].end_time or 0, 
+                reverse=True
+            )
+            
+            # Keep only the most recent tasks
+            tasks_to_keep = dict(sorted_tasks[:self._max_completed_tasks])
+            removed_count = current_count - len(tasks_to_keep)
+            
+            self._completed_tasks = tasks_to_keep
+            self._last_cleanup = time.time()
+            
+            logger.info(f"Cleaned up {removed_count} old completed tasks, {len(tasks_to_keep)} remaining")
+            
+        except Exception as e:
+            logger.warning(f"Error during task cleanup: {e}")
+            self._last_cleanup = time.time()  # Prevent continuous cleanup attempts
 
 
 def async_timeout(timeout_seconds: float = 300.0):
