@@ -148,8 +148,10 @@ def test_hrv_frequency_analysis():
         processor = HRVProcessor()
         
         # Test frequency domain analysis - this should not generate excessive warnings
-        with logging.StreamHandler() as log_handler:
-            log_handler.setLevel(logging.WARNING)
+        # Temporarily capture warnings
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
             
             results = processor._compute_frequency_domain(rr_intervals)
             
