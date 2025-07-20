@@ -1248,12 +1248,10 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 raise Exception("No analysis data prepared")
             
             selected_domains = []
-            if self.time_domain_var.get():
-                selected_domains.append(HRVDomain.TIME)
-            if self.frequency_domain_var.get():
-                selected_domains.append(HRVDomain.FREQUENCY)
-            if self.nonlinear_var.get():
-                selected_domains.append(HRVDomain.NONLINEAR)
+            # Use the domain_vars dictionary instead of individual variables
+            for domain, var in self.domain_vars.items():
+                if var.get():
+                    selected_domains.append(domain)
                 
             if not selected_domains:
                 raise Exception("No analysis domains selected")

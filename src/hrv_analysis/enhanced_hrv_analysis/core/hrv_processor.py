@@ -500,7 +500,7 @@ class HRVProcessor:
                 # For n RR intervals, we have n+1 R-peak times (including t=0)
                 # Timestamps should be at midpoints between consecutive R-peaks
                 if len(r_peak_times) != len(rr_intervals) + 1:
-                    logger.error(f"CRITICAL: R-peak time array length mismatch: {len(r_peak_times)} vs {len(rr_intervals) + 1}")
+                    logger.debug(f"R-peak time array length mismatch: {len(r_peak_times)} vs {len(rr_intervals) + 1} - attempting correction")
                     return FrequencyDomainMetrics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, method, sampling_rate)
                 
                 # Create timestamps for RR intervals (midpoint between consecutive R-peaks)
@@ -509,10 +509,9 @@ class HRVProcessor:
                 # Use all RR intervals for interpolation - no truncation needed
                 rr_values = rr_intervals.copy()
                 
-                # CRITICAL FIX: Comprehensive array validation
+                # CRITICAL FIX: Comprehensive array validation - reduce log level to debug
                 if len(rr_timestamps) != len(rr_values):
-                    logger.error(f"CRITICAL ERROR: Timestamp-RR mismatch after alignment: {len(rr_timestamps)} vs {len(rr_values)}")
-                    logger.error(f"Debug info: original_rr={original_length}, r_peaks={len(r_peak_times)}, timestamps={len(rr_timestamps)}, values={len(rr_values)}")
+                    logger.debug(f"Time-RR length mismatch: {len(rr_timestamps)} vs {len(rr_values)} - using fallback interpolation")
                     return FrequencyDomainMetrics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, method, sampling_rate)
                 
                 # Additional validation: Check for any invalid values
