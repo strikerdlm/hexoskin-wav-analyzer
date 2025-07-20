@@ -46,7 +46,7 @@ try:
     from stats.advanced_statistics import AdvancedStats
     from ml_analysis.clustering import HRVClustering
     from ml_analysis.forecasting import HRVForecasting
-    from gui.performance_monitor import PerformanceMonitor
+
     from gui.settings_panel import SettingsPanel
 except ImportError as e:
     print(f"Import error: {e}")
@@ -63,7 +63,7 @@ except ImportError as e:
     from enhanced_hrv_analysis.stats.advanced_statistics import AdvancedStats
     from enhanced_hrv_analysis.ml_analysis.clustering import HRVClustering
     from enhanced_hrv_analysis.ml_analysis.forecasting import HRVForecasting
-    from enhanced_hrv_analysis.gui.performance_monitor import PerformanceMonitor
+
     from enhanced_hrv_analysis.gui.settings_panel import SettingsPanel
 
 logger = logging.getLogger(__name__)
@@ -1799,11 +1799,32 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             self.root.update_idletasks()
             self.root.update()
             
-            messagebox.showinfo("Success", f"HRV analysis completed successfully!\n\n" +
-                              f"✅ {len(all_results)} subjects processed\n" +
-                              f"✅ All requested HRV domains computed\n" +
-                              f"✅ Results ready for visualization\n" +
-                              f"✅ Real-time progress tracking worked!")
+            # Show completion message with plot instructions
+            success_message = (
+                f"🎉 HRV Analysis Completed Successfully!\n\n"
+                f"✅ {len(all_results)} subjects processed\n"
+                f"✅ All requested HRV domains computed\n"
+                f"✅ Results ready for visualization\n\n"
+                f"📊 TO CREATE PLOTS:\n"
+                f"1. Click on the 'Visualizations' tab above\n"
+                f"2. Select a subject from the dropdown\n"
+                f"3. Click any plot generation button\n"
+                f"4. Plots will open automatically in your browser\n\n"
+                f"Available plot types:\n"
+                f"• Poincaré Plot\n"
+                f"• Power Spectral Density\n" 
+                f"• Time Series\n"
+                f"• Complete Dashboard"
+            )
+            
+            messagebox.showinfo("Analysis Complete", success_message)
+            
+            # Switch to plots tab automatically
+            try:
+                self.results_notebook.select(1)  # Select plots tab
+                logger.info("Automatically switched to Visualizations tab")
+            except:
+                pass
             
         except Exception as e:
             logger.error(f"Error in simple analysis: {e}")
@@ -2210,11 +2231,15 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
     def _update_plots_display(self):
         """Update the plots display with visualization controls."""
         try:
+            logger.info("Updating plots display...")
             if not self.analysis_results:
+                logger.warning("No analysis results available for plots display")
                 return
                 
             # Clear existing plots
             self._clear_plots_display()
+            
+            logger.info(f"Creating plot controls for {len(self.analysis_results)} results")
             
             # Create plot control interface
             main_frame = ttk.Frame(self.plots_scrollable_frame)
@@ -2253,25 +2278,32 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             if subjects:
                 self.plot_subject_combo.set(subjects[0])  # Set first subject as default
             
-            # Plot generation buttons
-            button_frame = ttk.Frame(main_frame)
+            # Plot generation buttons with more prominent styling
+            button_frame = ttk.LabelFrame(main_frame, text="📊 Plot Generation", padding="10")
             button_frame.grid(row=3, column=0, columnspan=2, pady=15, sticky=(tk.W, tk.E))
             
-            ttk.Button(button_frame, text="Generate Poincaré Plot",
-                      command=self._generate_poincare_plot).grid(row=0, column=0, padx=5, pady=2)
+            # Make button frame more visible
+            button_frame.configure(relief='raised', borderwidth=2)
             
-            ttk.Button(button_frame, text="Generate PSD Plot", 
-                      command=self._generate_psd_plot).grid(row=0, column=1, padx=5, pady=2)
-                      
-            ttk.Button(button_frame, text="Generate Time Series Plot",
-                      command=self._generate_timeseries_plot).grid(row=1, column=0, padx=5, pady=2)
-                      
-            ttk.Button(button_frame, text="Generate All Plots",
-                      command=self._generate_all_plots).grid(row=1, column=1, padx=5, pady=2)
+            ttk.Button(button_frame, text="🔵 Generate Poincaré Plot",
+                      command=self._generate_poincare_plot, width=25).grid(row=0, column=0, padx=5, pady=5, sticky=(tk.W, tk.E))
             
-            # Second row for additional plot types
-            ttk.Button(button_frame, text="Combined Time Series",
-                      command=self._generate_combined_time_series).grid(row=2, column=0, columnspan=2, padx=5, pady=2, sticky=(tk.W, tk.E))
+            ttk.Button(button_frame, text="📈 Generate PSD Plot", 
+                      command=self._generate_psd_plot, width=25).grid(row=0, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+                      
+            ttk.Button(button_frame, text="📉 Generate Time Series Plot",
+                      command=self._generate_timeseries_plot, width=25).grid(row=1, column=0, padx=5, pady=5, sticky=(tk.W, tk.E))
+                      
+            ttk.Button(button_frame, text="🎛️ Generate Dashboard",
+                      command=self._generate_all_plots, width=25).grid(row=1, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+            
+            # Combined analysis button
+            ttk.Button(button_frame, text="🔗 Combined Time Series (All Subjects)",
+                      command=self._generate_combined_time_series, width=52).grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky=(tk.W, tk.E))
+            
+            # Configure button frame columns
+            button_frame.columnconfigure(0, weight=1)
+            button_frame.columnconfigure(1, weight=1)
             
             # Plot display area
             self.plot_display_frame = ttk.LabelFrame(main_frame, text="Plot Display", padding="10")
@@ -2285,8 +2317,21 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             main_frame.columnconfigure(1, weight=1)
             self.plots_scrollable_frame.columnconfigure(0, weight=1)
             
+            # Force GUI update to make buttons visible immediately
+            self.root.update_idletasks()
+            
+            # Update the results notebook to ensure the plots tab is visible
+            try:
+                self.results_notebook.tab(1, state="normal")  # Enable plots tab
+            except:
+                pass
+            
+            logger.info("✅ Plot controls created successfully! Buttons should now be visible.")
+            
         except Exception as e:
-            logger.error(f"Error updating plots display: {e}")
+            logger.error(f"❌ Error updating plots display: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     def _clear_plots_display(self):
         """Clear all widgets from the plots display."""
@@ -3381,26 +3426,10 @@ Special Thanks:
             return {'error': str(e)}
     
     def _setup_performance_monitor(self):
-        """Setup the performance monitoring section."""
-        try:
-            monitor_frame = ttk.Frame(self.left_panel, padding="2")
-            monitor_frame.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
-            
-            # Initialize performance monitor with provider functions
-            self.performance_monitor = PerformanceMonitor(
-                parent_frame=monitor_frame,
-                cache_provider=self._get_cache_stats,
-                async_processor_provider=self._get_async_processor_stats
-            )
-            
-            # Auto-start monitoring if configured
-            if self.settings_panel.get_settings().get('monitor_auto_start', False):
-                self.performance_monitor.start_monitoring()
-                
-            logger.info("Performance monitor initialized")
-            
-        except Exception as e:
-            logger.error(f"Error setting up performance monitor: {e}")
+        """Performance monitor disabled by user request."""
+        # Performance monitor has been removed as it was not working properly
+        self.performance_monitor = None
+        logger.info("Performance monitor disabled")
     
     def _on_window_closing(self):
         """Handle window closing event - stops any running analysis."""
