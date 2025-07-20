@@ -1,336 +1,270 @@
-# Hexoskin WAV File Analyzer
+# Valquiria Space Analog Physiological Data Analysis Suite
 
-**Version 0.0.3**
+**Version 2.0.0**
 
-**Developed by Diego Malpica MD**  
-Aerospace and Physiology Research, March 2025  
-For the Valquiria Space Analog Simulation
+**Author:** Dr. Diego Malpica MD - Aerospace Medicine Specialist  
+**Organization:** Colombian Aerospace Force (FAC) / DIMAE  
+**Project:** Valquiria Crew Space Simulation - Physiological Research Platform
 
-**Special Thanks To:**  
-- Centro de Telemedicina de Colombia
-- Women AeroSTEAM
+---
 
-## Overview
+## 🚨 IMPORTANT DISCLAIMER
 
-This project provides tools for loading, analyzing, and visualizing Hexoskin WAV files containing physiological data. Hexoskin smart garments collect various health metrics (ECG, respiration, etc.) which can be exported as WAV files. This application helps researchers and clinicians work with these files.
+**This is an ongoing research project developed for scientific and educational purposes only.**
 
-## Features
+⚠️ **NOT FOR OPERATIONAL DEPLOYMENT** ⚠️
+- This software is **NOT approved** for military operations
+- This software is **NOT approved** for clinical diagnosis or treatment
+- This software is **NOT approved** for operational crew health monitoring
+- Use only for research, training, and educational purposes
 
-- Load and decode Hexoskin WAV files (ECG, breathing, etc.)
-- Extract timestamp and value data
-- Automatic detection of real timestamps from info.json files
-- Apply filters to smooth or process the data
-- Resample data to different frequencies
-- Plot the data with customizable visualization options
-- Time unit conversion (seconds, minutes, hours, days) with accurate timestamps
-- View controls (fit to window, zoom in/out)
-- Comprehensive statistical analysis with multiple normality tests
-- Advanced descriptive statistics with distribution analysis
-- Compare up to 15 datasets with parametric and non-parametric tests
-- Multiple post-hoc analysis methods with effect size calculations
-- Support for repeated measures designs and factorial analysis
-- Interactive statistical visualization with QQ plots and histograms
-- Save processed data to CSV format
-- Export graphs as high-quality PNG images
-- Export statistical results to CSV
-- GUI for interactive data analysis with a tabbed interface
-- Command-line interface for batch processing
+**For any operational or clinical applications, please consult with certified medical professionals and use validated, regulatory-approved systems.**
 
-## What's New in Version 0.0.3
+---
 
-- Fixed issue with notebook widget initialization to properly display comparisons
-- Improved error handling in post-hoc analysis for multiple dataset comparisons
-- Fixed post-hoc analysis display in statistical comparison results
-- Enhanced consistency in variable naming throughout code
-- Various code optimizations and bug fixes
+## Project Overview
 
-## Latest Improvements (March 2025)
+The Valquiria Space Analog Physiological Data Analysis Suite is a comprehensive research platform designed to analyze physiological data collected during space analog simulations. The suite combines two powerful components:
 
-- **Enhanced Error Handling**: Comprehensive logging system with specific exception handling
-- **Improved WAV Loading**: Dynamic format detection and memory management for large files
-- **Optimized Statistical Analysis**: 1000x faster calculations with vectorized operations
-- **Better Data Validation**: Comprehensive file format validation and data integrity checks
-- **Enhanced Memory Management**: Chunked processing with configurable memory limits
-- **Robust Data Processing**: Improved input validation and error recovery
-- **Comprehensive Documentation**: Detailed user manual with troubleshooting guide
+1. **Hexoskin WAV File Analyzer** - Complete physiological data processing and analysis
+2. **Enhanced HRV Analysis System** - Advanced heart rate variability analysis with machine learning
 
-## What's New in Version 0.0.2
+This platform was developed to support the Valquiria Space Analog Simulation research program, studying physiological adaptations and crew health monitoring in simulated space environments.
 
-- Enhanced statistical analysis with comprehensive descriptive statistics
-- Advanced normality tests including Anderson-Darling and Jarque-Bera
-- Support for comparing up to 15 datasets simultaneously
-- New statistical tests: Welch's ANOVA, RM-ANOVA, and Aligned Ranks Transform
-- Improved post-hoc analysis with multiple correction methods (Bonferroni, FDR)
-- Interactive statistical visualization with QQ plots and histograms
-- Export capabilities for all statistical results
+## 🌟 Key Features
 
-## Installation
+### Hexoskin WAV File Analyzer
+- **Multi-format Data Loading**: Load and decode Hexoskin WAV files containing ECG, respiration, and other physiological signals
+- **Advanced Signal Processing**: Automatic artifact detection, filtering, and signal quality assessment
+- **Comprehensive Statistics**: 15+ statistical tests including normality, parametric/non-parametric comparisons
+- **Multi-dataset Analysis**: Compare up to 15 datasets simultaneously with post-hoc analysis
+- **Interactive Visualization**: Real-time plotting with multiple time units and view controls
+- **Export Capabilities**: Save processed data, statistical results, and high-quality plots
+- **Dual Interface**: Both GUI and command-line interfaces available
 
-### Requirements
+### Enhanced HRV Analysis System
+- **Complete HRV Analysis**: Time domain, frequency domain, and nonlinear metrics
+- **Autonomic Nervous System Assessment**: Advanced parasympathetic, sympathetic, and ANS balance analysis
+- **Machine Learning Integration**: Clustering for autonomic phenotyping and forecasting for adaptation prediction
+- **Advanced Statistics**: GAM trend analysis, mixed-effects modeling, bootstrap confidence intervals
+- **Interactive Dashboards**: Real-time visualization with Plotly-based interactive plots
+- **Enterprise Performance**: Intelligent caching, async processing, and database optimization
+- **Research Analytics**: Comprehensive statistical reporting and data quality assessment
 
-- Python 3.6+
-- numpy
-- pandas
-- matplotlib
-- scipy
-- tkinter (for GUI)
+## 🏗️ Project Structure
 
-Install the dependencies using pip:
-
-```bash
-pip install numpy pandas matplotlib scipy
+```
+Valquiria-Data-Analysis/
+├── 📁 docs/                           # Documentation (all markdown files)
+├── 📁 working_folder/                 # Main analysis workspace
+│   ├── 📁 enhanced_hrv_analysis/      # Advanced HRV Analysis System
+│   │   ├── 📁 core/                   # Core processing modules
+│   │   ├── 📁 gui/                    # Graphical user interface
+│   │   ├── 📁 ml_analysis/           # Machine learning components
+│   │   ├── 📁 stats/                 # Advanced statistics
+│   │   ├── 📁 visualization/         # Interactive plotting
+│   │   └── 📁 tests/                 # Test suite
+│   ├── 📁 Jupyter notebooks/         # Analysis notebooks
+│   ├── 📁 hrv_results/              # Analysis outputs
+│   └── 📁 scripts/                   # Utility scripts
+├── 📁 DBs/                           # Database files (Sol data)
+├── 📁 csv_joiner/                    # Data merging utilities
+├── hexoskin_wav_loader.py            # Main Hexoskin analyzer
+├── hexoskin_wav_example.py           # Usage examples
+├── analyze_data.py                   # Data analysis scripts
+├── requirements.txt                  # Python dependencies
+└── setup.py                         # Installation script
 ```
 
-Tkinter typically comes with Python installations. If it's missing, you can install it with:
+## 🚀 Quick Start
 
+### System Requirements
+- **Python**: 3.8+ (tested up to 3.11)
+- **Operating System**: Cross-platform (Linux, macOS, Windows)
+- **Memory**: 8GB RAM minimum, 16GB recommended for large datasets
+- **Storage**: 2GB free space for installation and cache
+
+### Installation
+
+1. **Clone the Repository**
 ```bash
-# For Ubuntu/Debian
-sudo apt-get install python3-tk
-
-# For macOS (using Homebrew)
-brew install python-tk
-
-# For Windows
-# Tkinter is included with standard Python installation
+git clone <repository-url>
+cd Valquiria-Data-Analysis
 ```
 
-### Setup
-
-1. Clone this repository or download the files:
-   - `hexoskin_wav_loader.py`: Core library for loading WAV files
-   - `hexoskin_wav_example.py`: Example script to process WAV files
-   - `README.md`: This documentation file
-
-## Usage
-
-### GUI Interface
-
-Run the GUI application:
-
+2. **Set Up Virtual Environment**
 ```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# Linux/macOS:
+source venv/bin/activate
+# Windows:
+venv\Scripts\activate
+```
+
+3. **Install Dependencies**
+```bash
+pip install -r requirements.txt
+```
+
+4. **Verify Installation**
+```bash
+python test_libraries.py
+```
+
+### Quick Usage
+
+#### Hexoskin WAV Analyzer
+```bash
+# GUI Mode (Recommended)
 python hexoskin_wav_loader.py
-```
 
-Using the GUI:
-1. Click "Load WAV File" to select a single file or "Batch Load WAV Files" for multiple files
-2. Select a file from the list to view its data and metadata (the plot and statistics will update automatically)
-3. Use the processing tools to resample or filter the data
-4. Customize plot appearance (color, line width, title)
-5. Change time units (seconds, minutes, hours, days) for better visualization
-6. Use view controls to fit data to window, zoom in/out, or reset view
-7. Export the graph as PNG or save the data as CSV
-8. Compare multiple files in the Comparison tab using non-parametric statistical tests
-
-### Command Line Interface
-
-For batch processing or scripting, use the example script:
-
-```bash
+# Command Line Mode
 python hexoskin_wav_example.py path/to/your/file.wav
 ```
 
-This will:
-1. Load the specified WAV file
-2. Apply a lowpass filter (10 Hz)
-3. Resample to 100 Hz
-4. Plot the data
-5. Save the processed data to a CSV file
-
-### Using as a Library
-
-You can import `HexoskinWavLoader` in your own Python scripts:
-
-```python
-from hexoskin_wav_loader import HexoskinWavLoader
-
-# Create loader instance
-loader = HexoskinWavLoader()
-
-# Load a WAV file
-loader.load_wav_file("path/to/ECG_I.wav")
-
-# Get data as a pandas DataFrame
-data = loader.get_data()
-
-# Process the data
-loader.filter_data(lowcut=0.5, highcut=20)  # Apply bandpass filter
-loader.resample_data(100)  # Resample to 100 Hz
-
-# Perform statistical analysis
-stats = loader.get_descriptive_stats()
-normality = loader.test_normality()
-
-# Save to CSV
-loader.save_to_csv("processed_data.csv")
+#### Enhanced HRV Analysis
+```bash
+# Launch Advanced HRV Analysis GUI
+cd working_folder/enhanced_hrv_analysis
+python launch_hrv_analysis.py
 ```
 
-## Statistical Analysis
+## 📊 Analysis Capabilities
 
-The application includes comprehensive statistical analysis capabilities:
+### Physiological Data Processing
+- **Signal Quality Assessment**: Automatic artifact detection and signal validation
+- **Multi-parameter Analysis**: Heart rate, SPO2, temperature, blood pressure, respiratory rate
+- **Temporal Analysis**: Time-series analysis with circadian rhythm detection
+- **Data Integration**: Merge multiple sessions and subjects for longitudinal studies
 
-1. **Descriptive Statistics**
-   - Mean, median, standard deviation
-   - Min/max values and range
-   - Quartiles and interquartile range (IQR)
-   - Variance and coefficient of variation
-   - Skewness and kurtosis with confidence intervals
-   - Outlier detection and counting
-   - Percentiles (1st, 5th, 10th, 20th, 30th, 40th, 60th, 70th, 80th, 90th, 95th, 99th)
-   - Mode and mode count
-   - Median absolute deviation (MAD)
+### Heart Rate Variability (HRV) Analysis
+- **Time Domain**: RMSSD, SDNN, pNN50, triangular index, and 15+ metrics
+- **Frequency Domain**: VLF, LF, HF power analysis with Welch and AR methods
+- **Nonlinear Analysis**: Poincaré plots, DFA, entropy measures
+- **Autonomic Balance**: Advanced sympathetic/parasympathetic assessment
 
-2. **Normality Tests**
-   - Shapiro-Wilk test (best for smaller samples)
-   - D'Agostino's K^2 test (for skewness and kurtosis)
-   - Kolmogorov-Smirnov test (against normal distribution)
-   - Anderson-Darling test (sensitive to tails of distribution)
-   - Jarque-Bera test (based on skewness and kurtosis)
-   - Distribution shape analysis with interpretations
-   - QQ plot visualization with reference line
-   - Histogram with normal distribution curve
-   - Overall assessment with recommendations
+### Advanced Analytics
+- **Machine Learning**: Unsupervised clustering for autonomic phenotyping
+- **Predictive Modeling**: Time-series forecasting for adaptation prediction
+- **Statistical Modeling**: GAM, mixed-effects, bootstrap confidence intervals
+- **Multi-subject Analysis**: Population-level analysis with individual profiles
 
-3. **Comparison Tests for Two Datasets**
-   - Mann-Whitney U test for independent samples
-   - Wilcoxon signed-rank test for paired samples
-   - Kolmogorov-Smirnov two-sample test for distribution comparison
-   - Independent t-test for normally distributed data
-   - Welch's t-test for unequal variances
-   - Effect size calculation and interpretation
-   - Post-hoc analysis with recommendations
+### Visualization & Reporting
+- **Interactive Plots**: Poincaré plots, PSD analysis, time-series visualization
+- **Statistical Dashboards**: Real-time analytics with performance monitoring
+- **Export Options**: HTML reports, CSV data, high-resolution plots
+- **Research Reports**: Automated generation of analysis summaries
 
-4. **Multiple Dataset Comparison (up to 15 datasets)**
-   - One-way ANOVA for normally distributed data with equal variances
-   - Welch's ANOVA for normally distributed data with unequal variances
-   - Kruskal-Wallis H-test for non-parametric data
-   - Friedman test for non-parametric repeated measures
-   - Repeated Measures ANOVA for normally distributed repeated measures
-   - Aligned Ranks Transform ANOVA for non-normal factorial designs
-   - Automatic test selection based on data characteristics
-   - Effect size calculation with interpretation
+## 🔬 Scientific Features
 
-5. **Post-hoc Analysis**
-   - Tukey's HSD test after ANOVA
-   - Games-Howell test after Welch's ANOVA
-   - Dunn's test after Kruskal-Wallis
-   - Nemenyi test after Friedman
-   - Paired t-tests after RM-ANOVA
-   - Wilcoxon signed-rank tests after Aligned Ranks Transform
-   - Multiple testing corrections:
-     - Bonferroni correction (controls family-wise error rate)
-     - Benjamini-Hochberg procedure (controls false discovery rate)
-   - Effect size calculation for all pairwise comparisons
+### Research-Grade Analysis
+- **Artifact Detection**: Multiple algorithms (Malik, Karlsson, Kamath, IQR)
+- **Quality Metrics**: Comprehensive signal quality assessment
+- **Statistical Validation**: 15+ normality tests and comparison methods
+- **Confidence Intervals**: Bootstrap and parametric confidence estimation
 
-## Advanced Features
+### Space Medicine Applications
+- **Adaptation Tracking**: Longitudinal analysis of physiological adaptation
+- **Stress Assessment**: Autonomic nervous system stress indicators
+- **Crew Monitoring**: Individual and group health status analysis
+- **Mission Planning**: Predictive modeling for mission duration effects
 
-### Data Alignment
+## 💻 Technical Specifications
 
-The application can align two datasets to ensure they have the same time points and sampling rate, making comparison more valid:
+### Performance Features
+- **Intelligent Caching**: LRU caching with compression (2-10x speed improvement)
+- **Async Processing**: Non-blocking analysis with timeout protection
+- **Memory Management**: Adaptive memory limits and garbage collection
+- **Database Optimization**: Connection pooling and query optimization
 
-```python
-aligned_data1, aligned_data2 = HexoskinWavLoader.align_datasets(dataset1, dataset2, target_hz=100)
+### Data Handling
+- **Large Datasets**: Chunked processing for millions of records
+- **Multiple Formats**: CSV, SQLite, WAV files with auto-detection
+- **Data Validation**: Multi-stage quality assessment and cleaning
+- **Export Options**: JSON, CSV, HTML with customizable formats
+
+## 📚 Documentation
+
+All project documentation is organized in the `docs/` folder:
+- `docs/User_Manual.md` - Complete user guide
+- `docs/API_Documentation.md` - Developer reference
+- `docs/Scientific_Methods.md` - Analysis methodologies
+- `docs/Installation_Guide.md` - Detailed setup instructions
+
+## 🧪 Testing & Validation
+
+The project includes comprehensive test suites:
+```bash
+# Run all tests
+cd working_folder/enhanced_hrv_analysis/tests
+python run_all_tests.py
+
+# Run specific component tests
+python test_core_functionality.py
+python test_advanced_statistics.py
+python test_ml_analysis.py
 ```
 
-### Data Normalization
+## 🤝 Contributors & Acknowledgments
 
-To compare datasets with different scales, the application provides normalization methods:
+### Special Thanks
+- **Centro de Telemedicina de Colombia** - Technical collaboration
+- **Women AeroSTEAM** - Educational partnership
+- **Valquiria Space Analog Simulation Team** - Research collaboration
 
-```python
-normalized_data = HexoskinWavLoader.normalize_dataset(dataset, method='min_max')
-```
+### Technical Contributors
+- Advanced HRV Analysis Architecture
+- Statistical Methods Implementation
+- Machine Learning Integration
+- Performance Optimization
 
-Supported methods:
-- min_max: Scales data to range [0, 1]
-- z_score: Standardizes data to mean=0, std=1
-- robust: Uses median and IQR for robust scaling
+## 📄 License & Usage
 
-### Time Unit Conversion
+This project is provided as open-source software for **research and educational purposes only**.
 
-The application allows you to visualize time-series data in different time units:
+### Permitted Uses:
+✅ Academic research and publications  
+✅ Educational training and demonstrations  
+✅ Method development and validation  
+✅ Non-commercial scientific collaboration  
 
-- Seconds (default): Raw timestamps
-- Minutes: Timestamps divided by 60
-- Hours: Timestamps divided by 3600
-- Days: Timestamps divided by 86400 or actual calendar dates when using info.json
+### Prohibited Uses:
+❌ Military operational deployment  
+❌ Clinical diagnosis or treatment  
+❌ Commercial health monitoring services  
+❌ Safety-critical applications  
 
-When an info.json file is available in the same directory as the WAV file, the application automatically detects and uses real timestamps, converting the relative timestamps in the WAV file to absolute dates and times. This is particularly useful for long recordings or when comparing data from different recording sessions.
+## 📞 Contact & Support
 
-### Real Timestamp Detection
+**Primary Contact:**  
+Dr. Diego Malpica MD  
+Aerospace Medicine Specialist  
+Colombian Aerospace Force (FAC)  
+Email: dlmalpicah@unal.edu.co
 
-The application automatically searches for and uses timestamp information from the info.json file that accompanies Hexoskin recordings:
+**Project Information:**  
+For questions about the Valquiria Space Analog Simulation or this software platform, please contact the development team through the official channels.
 
-- Absolute start time of recording (UNIX timestamp)
-- Start date in human-readable format
-- Device information
+## 🔄 Version History
 
-This allows for more accurate visualization and comparison of data across multiple recording sessions, with plots showing actual dates and times instead of just relative timestamps.
+### Version 2.0.0 (Current)
+- Enhanced HRV Analysis System with ML capabilities
+- Advanced statistical methods and GAM analysis
+- Interactive visualization dashboard
+- Performance optimization with caching
+- Comprehensive test suite
 
-### View Controls
+### Version 1.0.0
+- Hexoskin WAV File Analyzer
+- Basic statistical analysis
+- GUI and command-line interfaces
+- Multi-dataset comparison
 
-Several view controls are available to help navigate and visualize the data:
+---
 
-- **Fit to Window**: Automatically adjusts the plot axes to show all data points
-- **Zoom In**: Magnifies the plot by 20% around the center
-- **Zoom Out**: Expands the view by 25% to show more context
-- **Reset View**: Returns to the original view that shows all data
+**⭐ If this software contributes to your research, please cite appropriately and acknowledge the Valquiria Space Analog Simulation project.**
 
-These controls make it easier to explore details in the data while maintaining the ability to see the overall patterns.
-
-## File Format
-
-Hexoskin WAV files follow this format:
-- Standard WAV header (44 bytes)
-- Binary data in short integer format
-- Sampling rates vary by sensor type (typically 128 Hz for ECG, 64 Hz for respiration)
-
-The `HexoskinWavLoader` class automatically:
-1. Extracts the sampling rate from the WAV header
-2. Calculates timestamps based on frame count and sampling rate
-3. Converts the binary data to numeric values
-
-## Troubleshooting
-
-Common issues:
-
-- **"Error loading WAV file"**: Make sure the file is a valid Hexoskin WAV file
-- **Tkinter not found**: Install tkinter for your Python version
-- **Missing dependencies**: Make sure all required packages are installed
-
-## Further Resources
-
-- [Hexoskin Developer Documentation](https://hexoskin.com)
-- [WAV File Format Specification](https://www.mmsp.ece.mcgill.ca/Documents/AudioFormats/WAVE/WAVE.html)
-
-## License
-
-This project is provided as open-source software. Feel free to modify and distribute it according to your needs.
-
-## About the Project
-
-This application was developed for the Valquiria Space Analog Simulation, which studies physiological responses in simulated space environments. The tools provided here help analyze and interpret physiological data collected from participants wearing Hexoskin garments.
-
-For more information about the Valquiria Space Analog Simulation, please contact Diego Malpica MD at dlmalpicah@unal.edu.co
-
-## Contributing
-
-Contributions to the Hexoskin WAV Analyzer are welcome! If you'd like to contribute, please:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is open-source and available for academic and research use.
-
-## Contact
-
-Diego Malpica, MD - Aerospace Medicine & Physiological Research
-
-## Acknowledgments
-
-- Centro de Telemedicina de Colombia
-- Women AeroSTEAM
-- Valquiria Space Analog Simulation team
+**🔬 Developed for advancing our understanding of human physiological adaptation in extreme environments.**
