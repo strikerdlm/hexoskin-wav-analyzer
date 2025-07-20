@@ -71,16 +71,20 @@ logger = logging.getLogger(__name__)
 class HRVAnalysisApp:
     """Main application class for enhanced HRV analysis GUI."""
     
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: tk.Tk, progress_callback=None):
         """
         Initialize the HRV Analysis application.
         
         Args:
             root: Main Tkinter root window
+            progress_callback: Optional callback function for initialization progress updates
         """
         self.root = root
         self.root.title("Enhanced HRV Analysis System - Valquiria Dataset")
         self.root.geometry("1200x800")
+        
+        # Store progress callback for initialization updates
+        self.progress_callback = progress_callback
         
         # Track GUI connection for background processing
         self._gui_active = True
@@ -91,11 +95,15 @@ class HRVAnalysisApp:
         self.root.bind("<FocusIn>", self._on_window_focus)
         self.root.bind("<FocusOut>", self._on_window_unfocus)
         
+        self._update_init_progress(5, "Initializing data loaders...")
+        
         # Initialize components
         self.data_loader = DataLoader()
         self.signal_processor = SignalProcessor()
         # PERFORMANCE FIX: Disable parallel processing and reduce bootstrap samples to prevent hanging
         self.hrv_processor = HRVProcessor(parallel_processing=False, n_jobs=1, confidence_level=0.95)
+        
+        self._update_init_progress(10, "Setting up cache system...")
         
         # Initialize intelligent caching system
         cache_dir = Path(__file__).parent.parent / "hrv_cache"
@@ -105,6 +113,8 @@ class HRVAnalysisApp:
             max_entries=1000,   # Maximum 1000 cached entries
             default_ttl_hours=24.0  # 24-hour cache expiry
         )
+        
+        self._update_init_progress(15, "Initializing async processor...")
         
         # Initialize asynchronous processor for non-blocking analysis
         self.async_processor = SafeAsyncProcessor(
@@ -116,6 +126,8 @@ class HRVAnalysisApp:
             allow_background_processing=False  # Default to disabled for safety
         )
         
+        self._update_init_progress(20, "Loading settings...")
+        
         # Initialize settings panel
         self.settings_panel = SettingsPanel(
             parent_window=root,
@@ -125,6 +137,8 @@ class HRVAnalysisApp:
         
         # Load and apply settings
         self._apply_settings(self.settings_panel.get_settings())
+        
+        self._update_init_progress(30, "Initializing analysis components...")
         
         self.interactive_plotter = InteractivePlotter()
         self.advanced_stats = AdvancedStats(n_bootstrap=50)  # Reduced from 1000
@@ -152,6 +166,8 @@ class HRVAnalysisApp:
         self.default_db_path = self.data_directory / "merged_data.db"
         self.default_csv_path = self.data_directory
         
+        self._update_init_progress(40, "Setting up user interface...")
+        
         # Setup GUI
         self._setup_theme()
         self._setup_layout()
@@ -161,8 +177,12 @@ class HRVAnalysisApp:
         # Center window
         self._center_window()
         
+        self._update_init_progress(60, "Loading Valquiria dataset...")
+        
         # Auto-load all subject data on startup
         self._auto_load_valquiria_data()
+        
+        self._update_init_progress(100, "Initialization complete!")
         
         logger.info("HRV Analysis application initialized with intelligent caching enabled")
         
@@ -548,6 +568,11 @@ class HRVAnalysisApp:
                     self.progress_details_var.set(detail_msg)
         
         self.root.after(0, update)
+    
+    def _update_init_progress(self, percentage: float, message: str):
+        """Update progress during initialization if callback is available."""
+        if self.progress_callback:
+            self.progress_callback(percentage, message)
     
     def _on_settings_changed(self, new_settings: Dict[str, Any]):
         """Handle settings changes."""
@@ -1084,9 +1109,17 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 
                 # Use optimized loader for large datasets
                 try:
+                    # Create a progress callback that uses either init progress or regular progress
+                    if self.progress_callback:
+                        # During initialization, map to 60-95% range
+                        progress_fn = lambda msg, pct: self._update_init_progress(60 + (pct * 0.35), msg)
+                    else:
+                        # During normal operation, use regular progress
+                        progress_fn = lambda msg, pct: self._update_progress(pct * 0.8, msg)
+                    
                     self.loaded_data = self.data_loader.load_database_data_optimized(
                         str(db_path),
-                        progress_callback=lambda msg, pct: self._update_progress(pct * 0.8, msg)  # Use 80% of progress for loading
+                        progress_callback=progress_fn
                     )
                 except Exception as optimized_error:
                     logger.warning(f"Optimized loading failed: {optimized_error}, trying standard loading")

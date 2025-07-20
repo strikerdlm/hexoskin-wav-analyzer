@@ -17,10 +17,143 @@ import os
 import logging
 from pathlib import Path
 import tkinter as tk
+from tkinter import ttk
+import threading
+import time
 
 # Add current directory to Python path for imports
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
+
+class SplashScreen:
+    """Loading splash screen with progress indication."""
+    
+    def __init__(self):
+        self.splash = tk.Tk()
+        self.splash.title("Loading HRV Analysis System")
+        self.splash.geometry("600x400")
+        self.splash.resizable(False, False)
+        
+        # Center the splash screen
+        self.splash.update_idletasks()
+        width = self.splash.winfo_width()
+        height = self.splash.winfo_height()
+        pos_x = (self.splash.winfo_screenwidth() // 2) - (width // 2)
+        pos_y = (self.splash.winfo_screenheight() // 2) - (height // 2)
+        self.splash.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
+        
+        # Remove window decorations and make it topmost
+        self.splash.overrideredirect(True)
+        self.splash.attributes("-topmost", True)
+        
+        # Configure background
+        self.splash.configure(bg='#2C3E50')
+        
+        # Create main frame
+        main_frame = tk.Frame(self.splash, bg='#2C3E50', padx=40, pady=40)
+        main_frame.pack(fill='both', expand=True)
+        
+        # Title
+        title_label = tk.Label(
+            main_frame,
+            text="Enhanced HRV Analysis System",
+            font=('Arial', 24, 'bold'),
+            fg='#ECF0F1',
+            bg='#2C3E50'
+        )
+        title_label.pack(pady=(0, 10))
+        
+        # Subtitle
+        subtitle_label = tk.Label(
+            main_frame,
+            text="Valquiria Crew Space Simulation Dataset",
+            font=('Arial', 14),
+            fg='#BDC3C7',
+            bg='#2C3E50'
+        )
+        subtitle_label.pack(pady=(0, 30))
+        
+        # Status label
+        self.status_label = tk.Label(
+            main_frame,
+            text="Initializing application...",
+            font=('Arial', 12),
+            fg='#3498DB',
+            bg='#2C3E50'
+        )
+        self.status_label.pack(pady=(0, 20))
+        
+        # Progress bar frame
+        progress_frame = tk.Frame(main_frame, bg='#2C3E50')
+        progress_frame.pack(fill='x', pady=(0, 20))
+        
+        # Progress bar
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure("Loading.Horizontal.TProgressbar",
+                       background='#3498DB',
+                       troughcolor='#34495E',
+                       borderwidth=0,
+                       lightcolor='#3498DB',
+                       darkcolor='#3498DB')
+        
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(
+            progress_frame,
+            variable=self.progress_var,
+            maximum=100,
+            style="Loading.Horizontal.TProgressbar",
+            length=400,
+            mode='determinate'
+        )
+        self.progress_bar.pack(pady=10)
+        
+        # Percentage label
+        self.percentage_label = tk.Label(
+            main_frame,
+            text="0%",
+            font=('Arial', 10, 'bold'),
+            fg='#ECF0F1',
+            bg='#2C3E50'
+        )
+        self.percentage_label.pack()
+        
+        # Details text
+        self.details_label = tk.Label(
+            main_frame,
+            text="Loading system components...",
+            font=('Arial', 9),
+            fg='#95A5A6',
+            bg='#2C3E50',
+            wraplength=500,
+            justify='center'
+        )
+        self.details_label.pack(pady=(10, 0))
+        
+        # Version info
+        version_label = tk.Label(
+            main_frame,
+            text="Dr. Diego Malpica - DIMAE / FAC / Colombia",
+            font=('Arial', 8),
+            fg='#7F8C8D',
+            bg='#2C3E50'
+        )
+        version_label.pack(side='bottom', pady=(20, 0))
+        
+    def update_progress(self, percentage, status_text, details_text=""):
+        """Update progress bar and status text."""
+        if self.splash and self.splash.winfo_exists():
+            self.progress_var.set(percentage)
+            self.status_label.config(text=status_text)
+            self.percentage_label.config(text=f"{int(percentage)}%")
+            if details_text:
+                self.details_label.config(text=details_text)
+            self.splash.update_idletasks()
+    
+    def destroy(self):
+        """Close the splash screen."""
+        if self.splash and self.splash.winfo_exists():
+            self.splash.destroy()
 
 def setup_logging():
     """Setup logging for the application."""
@@ -132,86 +265,128 @@ def safe_print(text):
         safe_text = safe_text.replace('🚀', '').replace('📊', '').replace('🎉', '')
         print(safe_text)
 
+def load_application_with_progress(splash_screen, logger):
+    """Load the main application with progress updates."""
+    try:
+        # Step 1: Check dependencies
+        splash_screen.update_progress(10, "Checking dependencies...", "Verifying required Python packages")
+        if not check_dependencies():
+            logger.error("Cannot start application due to missing dependencies")
+            return None
+        
+        # Step 2: Import GUI components
+        splash_screen.update_progress(25, "Loading GUI components...", "Importing Tkinter and interface modules")
+        from gui.main_application import HRVAnalysisApp
+        
+        # Step 3: Create main window
+        splash_screen.update_progress(40, "Creating main window...", "Initializing Tkinter root window")
+        root = tk.Tk()
+        root.withdraw()  # Hide initially
+        
+        # Step 4: Set window icon
+        splash_screen.update_progress(50, "Setting up interface...", "Configuring window properties")
+        try:
+            icon_path = current_dir / "assets" / "hrv_icon.ico"
+            if icon_path.exists():
+                root.iconbitmap(str(icon_path))
+        except Exception:
+            pass
+        
+        # Step 5: Initialize application core
+        splash_screen.update_progress(60, "Initializing HRV processor...", "Setting up signal processing and analysis engines")
+        
+        # Custom progress callback for app initialization
+        def app_progress_callback(percentage, message):
+            # Map app loading progress to remaining 40% (60-100%)
+            mapped_percentage = 60 + (percentage * 0.4)
+            splash_screen.update_progress(mapped_percentage, "Loading application data...", message)
+        
+        # Step 6: Create application with progress tracking
+        splash_screen.update_progress(70, "Loading data components...", "Initializing data loaders and processors")
+        app = HRVAnalysisApp(root, progress_callback=app_progress_callback)
+        
+        # Step 7: Finalize setup
+        splash_screen.update_progress(90, "Finalizing setup...", "Preparing user interface")
+        root.deiconify()  # Show the main window
+        
+        splash_screen.update_progress(100, "Ready!", "HRV Analysis System loaded successfully")
+        time.sleep(0.5)  # Brief pause to show completion
+        
+        return root, app
+        
+    except ImportError as e:
+        logger.error(f"Failed to import GUI components: {e}")
+        splash_screen.update_progress(0, "Error: Failed to load components", str(e))
+        return None
+    except Exception as e:
+        logger.error(f"Error loading application: {e}")
+        splash_screen.update_progress(0, "Error: Application failed to load", str(e))
+        return None
+
 def main():
     """Main entry point for the application."""
     logger = setup_logging()
     
     try:
-        # Check dependencies
-        if not check_dependencies():
-            logger.error("Cannot start application due to missing dependencies")
+        # Create and show splash screen
+        splash = SplashScreen()
+        splash.splash.update()
+        
+        # Load application with progress
+        result = load_application_with_progress(splash, logger)
+        
+        if result is None:
+            logger.error("Failed to load application")
+            splash.update_progress(0, "Failed to load application", "Check console for details")
+            time.sleep(3)
+            splash.destroy()
             safe_print("Press Enter to exit...")
             input()
             return 1
         
-        logger.info("All required dependencies found")
+        root, app = result
         
-        # Import and launch the GUI
-        try:
-            from gui.main_application import HRVAnalysisApp
-            
-            # Create the main window
-            root = tk.Tk()
-            
-            # Set window icon if available
-            try:
-                # Look for icon file
-                icon_path = current_dir / "assets" / "hrv_icon.ico"
-                if icon_path.exists():
-                    root.iconbitmap(str(icon_path))
-            except Exception:
-                pass  # Icon not critical
-            
-            # Create and run the application
-            logger.info("Initializing HRV Analysis GUI...")
-            app = HRVAnalysisApp(root)
-            
-            logger.info("GUI initialized successfully")
-            logger.info("Starting main event loop...")
-            
-            # Show startup message
-            safe_print("\n" + "="*70)
-            safe_print("ENHANCED HRV ANALYSIS - ALL SUBJECTS MODE")
-            safe_print("="*70)
-            safe_print("[OK] Analyze All Subjects: Enabled by default")
-            safe_print("[OK] Bootstrap CI: Disabled by default (can enable if needed)")
-            safe_print("[OK] Timeout Protection: 5 minutes per analysis")
-            safe_print("[OK] Memory Protection: Limits extremely large datasets")
-            safe_print("[OK] Data Limiting: Available as option if needed")
-            safe_print("="*70)
-            safe_print("⚠️  PROCESSING TIME NOTICE:")
-            safe_print("   • Time/Frequency Analysis: Fast (< 30 seconds)")
-            safe_print("   • Nonlinear Analysis: May take several minutes")
-            safe_print("     (DFA, entropy calculations are computationally intensive)")
-            safe_print("   • Monitor progress via GUI status and progress bar")
-            safe_print("="*70)
-            safe_print("🔄 TIMEOUT RECOVERY & RESULT PERSISTENCE:")
-            safe_print("   • Automatic retry on timeouts (up to 2 attempts)")
-            safe_print("   • Results automatically saved to prevent work loss")
-            safe_print("   • Background processing available (disabled by default)")
-            safe_print("   • Analysis can continue even if GUI is closed")
-            safe_print("   • Notifications when background analysis completes")
-            safe_print("="*70)
-            safe_print("⚙️  BACKGROUND PROCESSING (Optional):")
-            safe_print("   • Enable in Settings > Async Processing")
-            safe_print("   • Allows analysis to continue if GUI is closed")
-            safe_print("   • Results automatically saved and cached")
-            safe_print("   • System notifications when complete (if available)")
-            safe_print("   • Restart application to see background results")
-            safe_print("="*70)
-            safe_print("Ready to analyze ALL Valquiria subjects!")
-            safe_print("="*70 + "\n")
-            
-            # Start the GUI main loop
-            root.mainloop()
-            
-        except ImportError as e:
-            logger.error(f"Failed to import GUI components: {e}")
-            logger.error("Make sure all files are in the correct location")
-            return 1
-        except Exception as e:
-            logger.error(f"Error starting GUI: {e}")
-            return 1
+        # Close splash screen
+        splash.destroy()
+        
+        logger.info("GUI initialized successfully")
+        logger.info("Starting main event loop...")
+        
+        # Show startup message
+        safe_print("\n" + "="*70)
+        safe_print("ENHANCED HRV ANALYSIS - ALL SUBJECTS MODE")
+        safe_print("="*70)
+        safe_print("[OK] Analyze All Subjects: Enabled by default")
+        safe_print("[OK] Bootstrap CI: Disabled by default (can enable if needed)")
+        safe_print("[OK] Timeout Protection: 5 minutes per analysis")
+        safe_print("[OK] Memory Protection: Limits extremely large datasets")
+        safe_print("[OK] Data Limiting: Available as option if needed")
+        safe_print("="*70)
+        safe_print("⚠️  PROCESSING TIME NOTICE:")
+        safe_print("   • Time/Frequency Analysis: Fast (< 30 seconds)")
+        safe_print("   • Nonlinear Analysis: May take several minutes")
+        safe_print("     (DFA, entropy calculations are computationally intensive)")
+        safe_print("   • Monitor progress via GUI status and progress bar")
+        safe_print("="*70)
+        safe_print("🔄 TIMEOUT RECOVERY & RESULT PERSISTENCE:")
+        safe_print("   • Automatic retry on timeouts (up to 2 attempts)")
+        safe_print("   • Results automatically saved to prevent work loss")
+        safe_print("   • Background processing available (disabled by default)")
+        safe_print("   • Analysis can continue even if GUI is closed")
+        safe_print("   • Notifications when background analysis completes")
+        safe_print("="*70)
+        safe_print("⚙️  BACKGROUND PROCESSING (Optional):")
+        safe_print("   • Enable in Settings > Async Processing")
+        safe_print("   • Allows analysis to continue if GUI is closed")
+        safe_print("   • Results automatically saved and cached")
+        safe_print("   • System notifications when complete (if available)")
+        safe_print("   • Restart application to see background results")
+        safe_print("="*70)
+        safe_print("Ready to analyze ALL Valquiria subjects!")
+        safe_print("="*70 + "\n")
+        
+        # Start the GUI main loop
+        root.mainloop()
             
     except KeyboardInterrupt:
         logger.info("Application interrupted by user")
