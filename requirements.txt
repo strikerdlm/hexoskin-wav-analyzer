@@ -1,4 +1,4 @@
-# Hexoskin WAV File Analyzer - Requirements
+# Enhanced HRV Analysis System - Requirements
 # Created for the Valquiria Space Analog Simulation
 
 # Core dependencies
@@ -13,5 +13,51 @@ scipy>=1.7.0
 # For advanced plotting
 seaborn>=0.11.0
 
+# Machine learning and preprocessing
+scikit-learn>=1.0.0
+
+# For file encoding detection
+chardet>=5.2.0
+
 # Optional: For exporting to other formats
 openpyxl>=3.0.0  # For Excel export support 
+
+# For Jupyter notebook conversion
+nbconvert>=7.16.6
+
+# HRV Analysis
+hrv-analysis>=1.0.4
+
+# Enhanced visualization dependencies
+plotly>=5.0.0
+kaleido>=0.2.1  # For static image export from plotly
+
+# Performance optimization
+joblib>=1.0.0  # For parallel processing
+numba>=0.56.0  # For JIT compilation and vectorization
+
+# Advanced statistical analysis
+statsmodels>=0.13.0  # For mixed-effects models and GAMs
+patsy>=0.5.0  # For formula specification in statsmodels
+
+# Machine learning enhancements
+umap-learn>=0.5.0  # For dimensionality reduction
+hdbscan>=0.8.0  # For density-based clustering
+
+# Time series analysis and forecasting
+pmdarima>=2.0.0  # For ARIMA models
+prophet>=1.1.0  # For trend forecasting
+
+# Testing framework
+pytest>=7.0.0
+pytest-cov>=4.0.0  # For coverage reporting
+
+# GUI framework
+tkinter  # Usually included with Python
+
+# Power analysis
+pingouin>=0.5.0  # For statistical power analysis
+
+# Entropy and nonlinear analysis
+nolds>=0.5.0  # For nonlinear dynamics analysis
+antropy>=0.1.0  # For entropy measures

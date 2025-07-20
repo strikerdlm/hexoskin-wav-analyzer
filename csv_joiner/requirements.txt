@@ -1,0 +1,11 @@
+# CSV Joiner - Requirements
+# For joining CSV files across Sol directories in Valquiria Research Data
+
+# Core dependencies
+pandas>=1.3.0
+numpy>=1.20.0
+chardet>=4.0.0
+python-dateutil>=2.8.2
+
+# This is all we need for the CSV joiner application
+# Other dependencies from the main project are not needed 

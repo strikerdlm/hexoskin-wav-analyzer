@@ -1,0 +1,118 @@
+PARASYMPATHETIC NERVOUS SYSTEM ANALYSIS REPORT
+============================================================
+
+INTRODUCTION
+--------------------
+This analysis examines parasympathetic nervous system activity in space crew
+members using validated heart rate variability (HRV) metrics. Parasympathetic
+activity reflects the body's 'rest and digest' response and is crucial for
+cardiovascular health, stress recovery, and overall autonomic balance.
+
+METHODOLOGY
+--------------------
+Parasympathetic activity was assessed using established HRV metrics:
+• RMSSD: Root mean square of successive RR interval differences
+• pNN50: Percentage of successive RR intervals differing by >50ms
+• pNN20: Percentage of successive RR intervals differing by >20ms
+• HF Power: High frequency power (0.15-0.4 Hz) from spectral analysis
+• HFnu: HF power in normalized units
+• SD1: Short-term variability from Poincaré plot analysis
+
+RESULTS
+--------------------
+Summary Statistics by Crew Member:
+
+Mara:
+  RMSSD: 11.99 ± 2.49 (range: 7.16-15.25)
+  PNNI_50: 0.46 ± 0.38 (range: 0.14-1.26)
+  PNNI_20: 2.75 ± 0.83 (range: 1.31-3.74)
+  HF: 27.88 ± 14.64 (range: 9.38-54.04)
+  HFNU: 10.57 ± 4.36 (range: 4.15-17.62)
+  SD1: 8.48 ± 1.76 (range: 5.06-10.78)
+
+Laura:
+  RMSSD: 9.43 ± 0.51 (range: 8.87-9.88)
+  PNNI_50: 0.31 ± 0.23 (range: 0.10-0.56)
+  PNNI_20: 3.39 ± 0.88 (range: 2.58-4.32)
+  HF: 14.09 ± 3.63 (range: 11.14-18.15)
+  HFNU: 7.83 ± 3.38 (range: 5.74-11.73)
+  SD1: 6.67 ± 0.37 (range: 6.27-6.99)
+
+Nancy:
+  RMSSD: 12.27 ± 1.67 (range: 10.95-14.54)
+  PNNI_50: 0.83 ± 0.59 (range: 0.10-1.47)
+  PNNI_20: 6.12 ± 4.62 (range: 0.75-11.65)
+  HF: 30.69 ± 14.12 (range: 18.22-49.88)
+  HFNU: 6.05 ± 1.91 (range: 4.64-8.85)
+  SD1: 8.68 ± 1.18 (range: 7.74-10.28)
+
+Michelle:
+  RMSSD: 8.87 ± 1.82 (range: 7.58-11.57)
+  PNNI_50: 0.14 ± 0.23 (range: 0.01-0.49)
+  PNNI_20: 3.02 ± 2.23 (range: 1.78-6.37)
+  HF: 14.99 ± 7.57 (range: 10.81-26.34)
+  HFNU: 3.90 ± 1.14 (range: 2.75-5.43)
+  SD1: 6.27 ± 1.29 (range: 5.36-8.18)
+
+Felicitas:
+  RMSSD: 25.14 ± 15.71 (range: 8.40-48.22)
+  PNNI_50: 3.68 ± 4.05 (range: 0.05-9.83)
+  PNNI_20: 12.60 ± 10.84 (range: 2.34-28.26)
+  HF: 153.08 ± 173.73 (range: 10.34-462.81)
+  HFNU: 8.44 ± 3.61 (range: 3.65-12.16)
+  SD1: 17.78 ± 11.11 (range: 5.94-34.10)
+
+Mara Selena:
+  RMSSD: 10.65 ± 4.64 (range: 7.03-19.42)
+  PNNI_50: 0.73 ± 1.15 (range: 0.00-2.97)
+  PNNI_20: 4.29 ± 4.81 (range: 0.73-13.21)
+  HF: 23.60 ± 25.53 (range: 6.51-73.11)
+  HFNU: 4.22 ± 1.95 (range: 2.32-6.12)
+  SD1: 7.53 ± 3.28 (range: 4.97-13.73)
+
+Geraldinn:
+  RMSSD: 9.88 ± 1.15 (range: 8.65-11.20)
+  PNNI_50: 0.22 ± 0.25 (range: 0.05-0.59)
+  PNNI_20: 4.11 ± 1.29 (range: 2.66-5.62)
+  HF: 20.58 ± 4.11 (range: 15.86-25.88)
+  HFNU: 5.70 ± 0.51 (range: 4.95-6.06)
+  SD1: 6.99 ± 0.81 (range: 6.12-7.92)
+
+Karina:
+  RMSSD: 6.50 ± 1.79 (range: 5.23-7.76)
+  PNNI_50: 0.04 ± 0.06 (range: 0.00-0.08)
+  PNNI_20: 1.07 ± 1.19 (range: 0.23-1.91)
+  HF: 6.96 ± 0.88 (range: 6.34-7.59)
+  HFNU: 4.79 ± 1.63 (range: 3.64-5.94)
+  SD1: 4.60 ± 1.27 (range: 3.70-5.49)
+
+Statistical Analysis:
+
+Between-crew differences (One-way ANOVA):
+  RMSSD: F=3.400, p=0.0090 **
+  PNNI_50: F=2.485, p=0.0396 *
+  PNNI_20: F=2.354, p=0.0493 *
+  HF: F=2.320, p=0.0523 ns
+  HFNU: F=3.547, p=0.0071 **
+  SD1: F=3.399, p=0.0090 **
+
+Correlations with mission time:
+  RMSSD: r=-0.118, p=0.4856
+  PNNI_50: r=-0.099, p=0.5607
+  PNNI_20: r=-0.135, p=0.4271
+  HF: r=-0.001, p=0.9933
+  HFNU: r=-0.279, p=0.0946
+  SD1: r=-0.118, p=0.4855
+
+CLINICAL INTERPRETATION
+------------------------------
+Higher values in parasympathetic metrics (RMSSD, pNN50, HF power, SD1)
+indicate greater parasympathetic activity and better autonomic balance.
+Lower values may suggest sympathetic dominance, stress, or fatigue.
+
+CONCLUSIONS
+--------------------
+This analysis provides comprehensive insights into parasympathetic nervous
+system activity across crew members throughout the mission timeline.
+Individual variations and temporal patterns can inform personalized
+countermeasures and health monitoring strategies.

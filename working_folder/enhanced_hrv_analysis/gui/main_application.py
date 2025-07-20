@@ -1,0 +1,2185 @@
+"""
+Main Tkinter Application for Enhanced HRV Analysis
+
+Author: Dr. Diego Malpica - Aerospace Medicine Specialist
+Organization: DIMAE / FAC / Colombia
+Project: Valquiria Crew Space Simulation HRV Analysis System
+
+This module provides a comprehensive GUI application for HRV analysis featuring:
+- Modern themed interface with customizable styling
+- Data loading and management with quality assessment
+- Interactive analysis configuration
+- Real-time visualization and results display
+- Export capabilities for results and visualizations
+- Progress tracking and status updates
+"""
+
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+import tkinter.scrolledtext as scrolledtext
+from pathlib import Path
+import threading
+import pandas as pd
+import numpy as np
+from typing import Dict, Any, Optional, List
+import logging
+import json
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+
+# Import enhanced HRV analysis components
+# Add parent directory to path for imports
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
+try:
+    from core.data_loader import DataLoader
+    from core.signal_processing import SignalProcessor
+    from core.hrv_processor import HRVProcessor, HRVDomain
+    from core.intelligent_cache import HRVResultsCache
+    from core.async_processor import SafeAsyncProcessor, ProgressTracker
+    from visualization.interactive_plots import InteractivePlotter
+    from stats.advanced_statistics import AdvancedStats
+    from ml_analysis.clustering import HRVClustering
+    from ml_analysis.forecasting import HRVForecasting
+    from gui.performance_monitor import PerformanceMonitor
+    from gui.settings_panel import SettingsPanel
+except ImportError as e:
+    print(f"Import error: {e}")
+    print("Trying alternative import paths...")
+    # Fallback to absolute imports
+    sys.path.append(str(Path(__file__).parent.parent.parent))
+    
+    from enhanced_hrv_analysis.core.data_loader import DataLoader
+    from enhanced_hrv_analysis.core.signal_processing import SignalProcessor
+    from enhanced_hrv_analysis.core.hrv_processor import HRVProcessor, HRVDomain
+    from enhanced_hrv_analysis.core.intelligent_cache import HRVResultsCache
+    from enhanced_hrv_analysis.core.async_processor import SafeAsyncProcessor, ProgressTracker
+    from enhanced_hrv_analysis.visualization.interactive_plots import InteractivePlotter
+    from enhanced_hrv_analysis.stats.advanced_statistics import AdvancedStats
+    from enhanced_hrv_analysis.ml_analysis.clustering import HRVClustering
+    from enhanced_hrv_analysis.ml_analysis.forecasting import HRVForecasting
+    from enhanced_hrv_analysis.gui.performance_monitor import PerformanceMonitor
+    from enhanced_hrv_analysis.gui.settings_panel import SettingsPanel
+
+logger = logging.getLogger(__name__)
+
+class HRVAnalysisApp:
+    """Main application class for enhanced HRV analysis GUI."""
+    
+    def __init__(self, root: tk.Tk):
+        """
+        Initialize the HRV Analysis application.
+        
+        Args:
+            root: Main Tkinter root window
+        """
+        self.root = root
+        self.root.title("Enhanced HRV Analysis System - Dr. Diego Malpica - Valquiria Dataset")
+        self.root.geometry("1200x800")
+        
+        # Initialize components
+        self.data_loader = DataLoader()
+        self.signal_processor = SignalProcessor()
+        # PERFORMANCE FIX: Disable parallel processing and reduce bootstrap samples to prevent hanging
+        self.hrv_processor = HRVProcessor(parallel_processing=False, n_jobs=1, confidence_level=0.95)
+        
+        # Initialize intelligent caching system
+        cache_dir = Path(__file__).parent.parent / "hrv_cache"
+        self.results_cache = HRVResultsCache(
+            cache_dir=cache_dir,
+            max_memory_mb=500,  # 500MB cache limit
+            max_entries=1000,   # Maximum 1000 cached entries
+            default_ttl_hours=24.0  # 24-hour cache expiry
+        )
+        
+        # Initialize asynchronous processor for non-blocking analysis
+        self.async_processor = SafeAsyncProcessor(
+            max_workers=2,  # Conservative for HRV analysis
+            default_timeout=300.0,  # 5 minute timeout
+            progress_callback=self._update_progress,
+            status_callback=self._update_status
+        )
+        
+        # Initialize settings panel
+        self.settings_panel = SettingsPanel(
+            parent_window=root,
+            settings_file=str(Path(__file__).parent.parent / "hrv_analysis_settings.json"),
+            on_settings_changed=self._on_settings_changed
+        )
+        
+        # Load and apply settings
+        self._apply_settings(self.settings_panel.get_settings())
+        
+        self.interactive_plotter = InteractivePlotter()
+        self.advanced_stats = AdvancedStats(n_bootstrap=50)  # Reduced from 1000
+        self.hrv_clustering = HRVClustering()
+        self.hrv_forecasting = HRVForecasting()
+        
+        # Application state
+        self.loaded_data = None
+        self.processed_data = None
+        self.analysis_results = {}
+        self.current_subject = None
+        self.analysis_running = False
+        self.analysis_timeout = 300  # 5 minute timeout for analysis
+        self.current_analysis_tasks = []  # Track async analysis tasks
+        
+        # Performance monitoring
+        self.performance_monitor = None
+        
+        # Performance optimization flags
+        self.fast_mode = False  # Analyze all subjects by default
+        self.max_bootstrap_samples = 50  # Limit bootstrap samples
+        
+        # Set default data paths
+        self.data_directory = Path(__file__).parent.parent.parent  # Points to working_folder
+        self.default_db_path = self.data_directory / "merged_data.db"
+        self.default_csv_path = self.data_directory
+        
+        # Setup GUI
+        self._setup_theme()
+        self._setup_layout()
+        self._setup_menu()
+        self._setup_status_bar()
+        
+        # Center window
+        self._center_window()
+        
+        # Auto-load all subject data on startup
+        self._auto_load_valquiria_data()
+        
+        logger.info("HRV Analysis application initialized with intelligent caching enabled")
+        
+    def _setup_theme(self):
+        """Setup modern theme and styling."""
+        try:
+            # Try to use modern themes
+            style = ttk.Style()
+            
+            # Available themes
+            available_themes = style.theme_names()
+            
+            # Preferred themes in order
+            preferred_themes = ['clam', 'alt', 'vista', 'xpnative']
+            
+            selected_theme = 'default'
+            for theme in preferred_themes:
+                if theme in available_themes:
+                    selected_theme = theme
+                    break
+                    
+            style.theme_use(selected_theme)
+            
+            # Custom styling
+            style.configure('Title.TLabel', font=('Helvetica', 16, 'bold'))
+            style.configure('Subtitle.TLabel', font=('Helvetica', 11, 'italic'), foreground='#4A5568')
+            style.configure('Caption.TLabel', font=('Helvetica', 10), foreground='#6A737D')
+            style.configure('Heading.TLabel', font=('Helvetica', 12, 'bold'))
+            style.configure('Status.TLabel', font=('Helvetica', 10))
+            
+            # Button styles
+            style.configure('Primary.TButton', font=('Helvetica', 10, 'bold'))
+            style.configure('Secondary.TButton', font=('Helvetica', 9))
+            
+            logger.info(f"Applied theme: {selected_theme}")
+            
+        except Exception as e:
+            logger.warning(f"Error setting up theme: {e}")
+            
+    def _setup_layout(self):
+        """Setup the main application layout."""
+        # Configure grid weights
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+        
+        # Main container frame
+        main_container = ttk.Frame(self.root)
+        main_container.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5, pady=5)
+        main_container.columnconfigure(0, weight=1)
+        main_container.columnconfigure(1, weight=2)
+        main_container.rowconfigure(0, weight=1)
+        
+        # Left panel for controls
+        self.left_panel = ttk.Frame(main_container, padding="5")
+        self.left_panel.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # Right panel for results  
+        self.right_panel = ttk.Frame(main_container, padding="5")
+        self.right_panel.grid(row=0, column=1, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # Setup individual sections
+        self._setup_data_section()
+        self._setup_analysis_section() 
+        self._setup_control_section()
+        self._setup_export_section()
+        
+        # Add performance monitor if enabled in settings
+        if self.settings_panel.get_settings().get('ui_show_performance_monitor', True):
+            self._setup_performance_monitor()
+        
+        self._setup_right_panel()
+        
+    def _setup_data_section(self):
+        """Setup data information display (data is auto-loaded)."""
+        # Title
+        title_label = ttk.Label(self.left_panel, text="Enhanced HRV Analysis", 
+                               style='Title.TLabel')
+        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 5), sticky=tk.W)
+        
+        # Author credit
+        author_label = ttk.Label(self.left_panel, text="By Dr. Diego Malpica - Aerospace Medicine Specialist", 
+                                style='Subtitle.TLabel')
+        author_label.grid(row=1, column=0, columnspan=2, pady=(0, 5), sticky=tk.W)
+        
+        # Mission context
+        mission_label = ttk.Label(self.left_panel, text="DIMAE / FAC / Colombia - Valquiria Crew", 
+                                 style='Caption.TLabel')
+        mission_label.grid(row=2, column=0, columnspan=2, pady=(0, 15), sticky=tk.W)
+        # Data Loading Frame
+        data_frame = ttk.LabelFrame(self.left_panel, text="Valquiria Dataset", padding="5")
+        data_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        data_frame.columnconfigure(0, weight=1)
+        
+        # Status label for data loading
+        self.data_status_label = ttk.Label(data_frame, text="Loading Valquiria dataset...", 
+                                          style='Heading.TLabel')
+        self.data_status_label.grid(row=0, column=0, sticky=tk.W, pady=(0, 10))
+        
+        # Data info display
+        self.data_info_text = tk.Text(data_frame, height=6, width=50, wrap=tk.WORD, state=tk.DISABLED)
+        self.data_info_text.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=5)
+        
+        # Subject selection
+        ttk.Label(data_frame, text="Analyze Subject:", style='Heading.TLabel').grid(row=2, column=0, sticky=tk.W, pady=(10, 5))
+        self.subject_var = tk.StringVar()
+        self.subject_combo = ttk.Combobox(data_frame, textvariable=self.subject_var, 
+                                         state='readonly', font=('Helvetica', 10))
+        self.subject_combo.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=5)
+        self.subject_combo.bind('<<ComboboxSelected>>', self._on_subject_selected)
+        
+        # Refresh data button (hidden initially, can be shown if needed)
+        self.refresh_button = ttk.Button(data_frame, text="Refresh Data", 
+                                        command=self._auto_load_valquiria_data,
+                                        style='Secondary.TButton')
+        # Don't grid it initially - can be added later if needed
+        
+    def _setup_analysis_section(self):
+        """Setup analysis configuration controls."""
+        # Analysis Configuration Frame
+        config_frame = ttk.LabelFrame(self.left_panel, text="Analysis Configuration", padding="5")
+        config_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        # HRV Domains selection
+        ttk.Label(config_frame, text="HRV Domains:", style='Heading.TLabel').grid(
+            row=0, column=0, columnspan=2, sticky=tk.W, pady=5)
+        
+        self.domain_vars = {}
+        domains = [('Time Domain', HRVDomain.TIME),
+                  ('Frequency Domain', HRVDomain.FREQUENCY), 
+                  ('Nonlinear', HRVDomain.NONLINEAR),
+                  ('Parasympathetic', HRVDomain.PARASYMPATHETIC),
+                  ('Sympathetic', HRVDomain.SYMPATHETIC)]
+        
+        for i, (label, domain) in enumerate(domains):
+            var = tk.BooleanVar(value=True)
+            self.domain_vars[domain] = var
+            ttk.Checkbutton(config_frame, text=label, variable=var).grid(
+                row=i+1, column=0, sticky=tk.W, padx=10)
+                
+        # Advanced Options
+        ttk.Label(config_frame, text="Advanced Options:", 
+                 style='Heading.TLabel').grid(row=len(domains)+1, column=0, 
+                                            columnspan=2, sticky=tk.W, pady=(10, 5))
+        
+        # PERFORMANCE FIX: Disable bootstrap by default to prevent hanging
+        self.bootstrap_ci_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(config_frame, text="Bootstrap Confidence Intervals (Slow)", 
+                       variable=self.bootstrap_ci_var).grid(
+            row=len(domains)+2, column=0, sticky=tk.W, padx=10)
+        
+        self.fast_mode_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(config_frame, text="Limit Data Size (prevents hanging)", 
+                       variable=self.fast_mode_var).grid(
+            row=len(domains)+3, column=0, sticky=tk.W, padx=10)
+        
+        self.clustering_var = tk.BooleanVar(value=False)  
+        ttk.Checkbutton(config_frame, text="Perform Clustering Analysis (Slow)",
+                       variable=self.clustering_var).grid(
+            row=len(domains)+4, column=0, sticky=tk.W, padx=10)
+        
+        self.forecasting_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(config_frame, text="Time Series Forecasting (Slow)",
+                       variable=self.forecasting_var).grid(
+            row=len(domains)+5, column=0, sticky=tk.W, padx=10)
+            
+    def _setup_control_section(self):
+        """Setup processing controls."""
+        # Processing Controls Frame
+        control_frame = ttk.LabelFrame(self.left_panel, text="Processing Controls", padding="5")
+        control_frame.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        # Process button
+        self.process_button = ttk.Button(control_frame, text="Run Analysis", 
+                                        command=self._run_analysis,
+                                        style='Primary.TButton')
+        self.process_button.grid(row=0, column=0, sticky=tk.W, pady=5)
+        
+        # Progress bar
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(control_frame, variable=self.progress_var,
+                                          mode='determinate', length=200)
+        self.progress_bar.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=5)
+        control_frame.columnconfigure(1, weight=1)
+        
+        # Clear button
+        ttk.Button(control_frame, text="Clear Results", 
+                  command=self._clear_results,
+                  style='Secondary.TButton').grid(row=1, column=0, sticky=tk.W, pady=5)
+                  
+    def _setup_export_section(self):
+        """Setup export controls.""" 
+        # Export Frame
+        export_frame = ttk.LabelFrame(self.left_panel, text="Export", padding="5")
+        export_frame.grid(row=6, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Button(export_frame, text="Export Results", 
+                  command=self._export_results,
+                  style='Secondary.TButton').grid(row=0, column=0, sticky=tk.W, pady=2)
+        
+        ttk.Button(export_frame, text="Export Plots",
+                  command=self._export_plots, 
+                  style='Secondary.TButton').grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+        
+        ttk.Button(export_frame, text="Generate Report",
+                  command=self._generate_report,
+                  style='Secondary.TButton').grid(row=1, column=0, sticky=tk.W, pady=2)
+                  
+    def _setup_right_panel(self):
+        """Setup the right results panel.""" 
+        # Create notebook for tabbed interface
+        self.results_notebook = ttk.Notebook(self.right_panel)
+        self.results_notebook.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.right_panel.columnconfigure(0, weight=1)
+        self.right_panel.rowconfigure(0, weight=1)
+        
+        # Results tab
+        self.results_frame = ttk.Frame(self.results_notebook)
+        self.results_notebook.add(self.results_frame, text="Analysis Results")
+        
+        # Plots tab
+        self.plots_frame = ttk.Frame(self.results_notebook)  
+        self.results_notebook.add(self.plots_frame, text="Visualizations")
+        
+        # Statistics tab
+        self.stats_frame = ttk.Frame(self.results_notebook)
+        self.results_notebook.add(self.stats_frame, text="Statistics")
+        
+        # Setup individual tabs
+        self._setup_results_tab()
+        self._setup_plots_tab()
+        self._setup_stats_tab()
+        
+    def _setup_results_tab(self):
+        """Setup the results display tab."""
+        # Results text area with scrollbar
+        self.results_text = scrolledtext.ScrolledText(self.results_frame, 
+                                                     wrap=tk.WORD, 
+                                                     width=80, height=30)
+        self.results_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.results_frame.columnconfigure(0, weight=1)
+        self.results_frame.rowconfigure(0, weight=1)
+        
+    def _setup_plots_tab(self):
+        """Setup the plots display tab."""
+        # Create scrollable frame for plots
+        self.plots_canvas = tk.Canvas(self.plots_frame)
+        self.plots_scrollbar = ttk.Scrollbar(self.plots_frame, orient="vertical", command=self.plots_canvas.yview)
+        self.plots_scrollable_frame = ttk.Frame(self.plots_canvas)
+        
+        self.plots_scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.plots_canvas.configure(scrollregion=self.plots_canvas.bbox("all"))
+        )
+        
+        self.plots_canvas.create_window((0, 0), window=self.plots_scrollable_frame, anchor="nw")
+        self.plots_canvas.configure(yscrollcommand=self.plots_scrollbar.set)
+        
+        # Grid the canvas and scrollbar
+        self.plots_canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.plots_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        
+        self.plots_frame.columnconfigure(0, weight=1)
+        self.plots_frame.rowconfigure(0, weight=1)
+        
+        # Initial placeholder
+        self.plots_placeholder = ttk.Label(self.plots_scrollable_frame, 
+                                          text="Visualizations will appear here after analysis.\nClick 'Run Analysis' to generate interactive plots.",
+                                          justify=tk.CENTER)
+        self.plots_placeholder.grid(row=0, column=0, padx=20, pady=20)
+        
+    def _setup_stats_tab(self):
+        """Setup the statistics display tab."""
+        # Statistics text area
+        self.stats_text = scrolledtext.ScrolledText(self.stats_frame,
+                                                   wrap=tk.WORD,
+                                                   width=80, height=30)
+        self.stats_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.stats_frame.columnconfigure(0, weight=1) 
+        self.stats_frame.rowconfigure(0, weight=1)
+        
+    def _setup_menu(self):
+        """Setup application menu bar."""
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+        
+        # File menu
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="Refresh Valquiria Data", command=self._auto_load_valquiria_data)
+        file_menu.add_separator()
+        file_menu.add_command(label="Export Results...", command=self._export_results)
+        file_menu.add_command(label="Export Plots...", command=self._export_plots)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.root.quit)
+        
+        # Analysis menu
+        analysis_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Analysis", menu=analysis_menu)
+        analysis_menu.add_command(label="Run HRV Analysis", command=self._run_analysis)
+        analysis_menu.add_command(label="Clear Results", command=self._clear_results)
+        
+        # Tools menu
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+        tools_menu.add_command(label="Settings...", command=self.settings_panel.show_settings_dialog)
+        tools_menu.add_separator()
+        tools_menu.add_command(label="Performance Monitor", command=self._toggle_performance_monitor)
+        tools_menu.add_command(label="Clear Cache", command=self._clear_cache)
+        
+        # Help menu
+        help_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="About", command=self._show_about)
+        
+    def _setup_status_bar(self):
+        """Setup status bar."""
+        self.status_frame = ttk.Frame(self.root)
+        self.status_frame.grid(row=1, column=0, sticky=(tk.W, tk.E))
+        
+        self.status_var = tk.StringVar(value="Ready")
+        self.status_label = ttk.Label(self.status_frame, textvariable=self.status_var,
+                                     style='Status.TLabel')
+        self.status_label.grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        
+    def _center_window(self):
+        """Center the application window on screen."""
+        self.root.update_idletasks()
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f'{width}x{height}+{x}+{y}')
+        
+    def _update_status(self, message: str):
+        """Update status bar message."""
+        self.status_var.set(message)
+        self.root.update_idletasks()
+        
+    def _on_settings_changed(self, new_settings: Dict[str, Any]):
+        """Handle settings changes."""
+        try:
+            self._apply_settings(new_settings)
+            logger.info("Settings applied successfully")
+        except Exception as e:
+            logger.error(f"Error applying settings: {e}")
+            messagebox.showerror("Settings Error", f"Error applying settings: {e}")
+    
+    def _apply_settings(self, settings: Dict[str, Any]):
+        """Apply settings to the application components."""
+        try:
+            # Update cache settings
+            if hasattr(self, 'results_cache'):
+                # Cache settings are applied at initialization, would need cache restart for changes
+                pass
+            
+            # Update async processor settings
+            if hasattr(self, 'async_processor') and settings.get('async_enabled', True):
+                # Async settings are applied at initialization, would need processor restart for changes
+                self.analysis_timeout = settings.get('async_timeout_seconds', 300.0)
+            
+            # Update analysis settings
+            if hasattr(self, 'advanced_stats'):
+                bootstrap_samples = settings.get('analysis_max_bootstrap_samples', 50)
+                # Would need to reinitialize advanced_stats for this change
+            
+            # Update UI settings
+            if settings.get('analysis_fast_mode_default', False):
+                self.fast_mode_var.set(True)
+            
+            # Update performance monitor
+            if hasattr(self, 'performance_monitor') and self.performance_monitor:
+                self.performance_monitor.update_interval = settings.get('monitor_update_interval', 2.0)
+                self.performance_monitor.max_history = settings.get('monitor_max_history', 60)
+            
+        except Exception as e:
+            logger.error(f"Error in _apply_settings: {e}")
+    
+    def _get_cache_stats(self) -> Dict[str, Any]:
+        """Get cache statistics for performance monitor."""
+        try:
+            if hasattr(self, 'results_cache'):
+                return self.results_cache.get_cache_stats()
+            return {}
+        except Exception as e:
+            logger.warning(f"Error getting cache stats: {e}")
+            return {}
+    
+    def _get_async_processor_stats(self) -> Dict[str, Any]:
+        """Get async processor statistics for performance monitor."""
+        try:
+            if hasattr(self, 'async_processor'):
+                return self.async_processor.get_progress_info()
+            return {}
+        except Exception as e:
+            logger.warning(f"Error getting async processor stats: {e}")
+            return {}
+    
+    def _toggle_performance_monitor(self):
+        """Toggle performance monitor visibility."""
+        if hasattr(self, 'performance_monitor') and self.performance_monitor:
+            if self.performance_monitor.monitoring_active:
+                self.performance_monitor.stop_monitoring()
+                messagebox.showinfo("Performance Monitor", "Performance monitoring stopped")
+            else:
+                self.performance_monitor.start_monitoring()
+                messagebox.showinfo("Performance Monitor", "Performance monitoring started")
+        else:
+            messagebox.showwarning("Performance Monitor", "Performance monitor not available")
+    
+    def _clear_cache(self):
+        """Clear the intelligent cache."""
+        try:
+            if hasattr(self, 'results_cache'):
+                result = messagebox.askyesno("Clear Cache", 
+                                           "Are you sure you want to clear the analysis cache?\n" +
+                                           "This will remove all cached results.")
+                if result:
+                    self.results_cache.clear_cache()
+                    messagebox.showinfo("Cache Cleared", "Analysis cache has been cleared successfully")
+            else:
+                messagebox.showwarning("Cache", "Cache system not available")
+        except Exception as e:
+            logger.error(f"Error clearing cache: {e}")
+            messagebox.showerror("Error", f"Error clearing cache: {e}")
+    
+    def _auto_load_valquiria_data(self):
+        """Automatically load all Valquiria subject CSV files."""
+        try:
+            self._update_status("Loading Valquiria dataset...")
+            self.data_status_label.configure(text="Loading all subject data...")
+            self.root.update_idletasks()
+            
+            # Define the working folder path where CSV files are located
+            import os
+            from pathlib import Path
+            
+            # Get the working folder path (we're currently in enhanced_hrv_analysis/gui/)
+            current_dir = Path(__file__).parent.parent  # Go up to enhanced_hrv_analysis
+            working_folder = current_dir.parent  # Go up to working_folder
+            
+            logger.info(f"Looking for data in: {working_folder}")
+            
+            if not working_folder.exists():
+                # Fallback: try different paths
+                possible_paths = [
+                    Path(r"C:\Users\User\OneDrive\FAC\Research\Valquiria\Data\working_folder"),
+                    Path("../.."),
+                    Path("..")
+                ]
+                
+                working_folder = None
+                for path in possible_paths:
+                    if path.exists() and (path / "T01_Mara.csv").exists():
+                        working_folder = path
+                        logger.info(f"Found working folder at: {working_folder}")
+                        break
+                
+                if working_folder is None:
+                    raise FileNotFoundError("Cannot locate Valquiria working folder")
+            
+            # Define all Valquiria subject files
+            subject_files = [
+                "T01_Mara.csv",
+                "T02_Laura.csv", 
+                "T03_Nancy.csv",
+                "T04_Michelle.csv",
+                "T05_Felicitas.csv",
+                "T06_Mara_Selena.csv",
+                "T07_Geraldinn.csv",
+                "T08_Karina.csv"
+            ]
+            
+            # Try to load from database first (if available)
+            db_path = working_folder / "merged_data.db"
+            if db_path.exists():
+                logger.info("Loading from Valquiria database...")
+                
+                # Use optimized loader for large datasets
+                try:
+                    self.loaded_data = self.data_loader.load_database_data_optimized(
+                        str(db_path),
+                        progress_callback=lambda msg, pct: self._update_progress(pct * 0.8, msg)  # Use 80% of progress for loading
+                    )
+                except Exception as optimized_error:
+                    logger.warning(f"Optimized loading failed: {optimized_error}, trying standard loading")
+                    self.loaded_data = self.data_loader.load_database_data(str(db_path))
+                
+                if self.loaded_data is not None and not self.loaded_data.empty:
+                    self._update_data_info_valquiria("database")
+                    self._update_subject_list()
+                    self.data_status_label.configure(text="✅ Valquiria Dataset Loaded (Database - Optimized)")
+                    self._update_status("Valquiria dataset loaded from database using optimized loader")
+                    logger.info(f"Successfully loaded {len(self.loaded_data):,} records from database")
+                    return
+            
+            # Load from CSV files
+            logger.info("Loading from Valquiria CSV files...")
+            available_files = []
+            for subject_file in subject_files:
+                file_path = working_folder / subject_file
+                if file_path.exists():
+                    available_files.append(str(file_path))
+                    logger.info(f"Found: {subject_file}")
+                else:
+                    logger.warning(f"Subject file not found: {subject_file}")
+            
+            if not available_files:
+                raise FileNotFoundError("No Valquiria subject CSV files found")
+            
+            # Load all available CSV files
+            self.loaded_data = self.data_loader.load_csv_data(csv_files=[Path(f).name for f in available_files], 
+                                                             data_dir=str(working_folder))
+            
+            if self.loaded_data is not None and not self.loaded_data.empty:
+                self._update_data_info_valquiria("csv")
+                self._update_subject_list()
+                self.data_status_label.configure(text="✅ Valquiria Dataset Loaded (CSV Files)")
+                self._update_status("Valquiria dataset loaded successfully")
+                logger.info(f"Successfully loaded {len(self.loaded_data):,} records from {len(available_files)} CSV files")
+            else:
+                raise Exception("Failed to load any data from CSV files")
+                
+        except Exception as e:
+            logger.error(f"Error loading Valquiria data: {e}")
+            self.data_status_label.configure(text="❌ Failed to load Valquiria dataset")
+            
+            # Fallback to sample data for demonstration
+            try:
+                logger.info("Falling back to sample data...")
+                self.loaded_data = DataLoader.create_sample_data(n_subjects=8, n_sols=6)
+                self._update_data_info_valquiria("sample")
+                self._update_subject_list()
+                self.data_status_label.configure(text="⚠️ Using Sample Data (Valquiria files not found)")
+                self._update_status("Using sample data - Valquiria files not found")
+                logger.info("Sample data generated as fallback")
+            except Exception as sample_error:
+                logger.error(f"Failed to generate sample data: {sample_error}")
+                self.data_status_label.configure(text="❌ Data loading failed")
+                self._update_status("Data loading failed")
+                
+    def _use_sample_data(self):
+        """Use sample data for demonstration - kept for compatibility."""
+        try:
+            self._update_status("Generating sample data...")
+            self.loaded_data = DataLoader.create_sample_data(n_subjects=5, n_sols=6)
+            
+            self._update_data_info()
+            self._update_subject_list()
+            self._update_status("Sample data loaded")
+            messagebox.showinfo("Success", "Sample data generated for demonstration")
+            
+        except Exception as e:
+            logger.error(f"Error generating sample data: {e}")
+            messagebox.showerror("Error", f"Error generating sample data: {e}")
+            self._update_status("Ready")
+            
+    def _update_data_info(self):
+        """Update data information display."""
+        if self.loaded_data is None:
+            return
+            
+        try:
+            info_text = f"Dataset Information:\n"
+            info_text += f"Total records: {len(self.loaded_data):,}\n"
+            
+            if 'subject' in self.loaded_data.columns:
+                n_subjects = self.loaded_data['subject'].nunique()
+                info_text += f"Subjects: {n_subjects}\n"
+                
+            if 'Sol' in self.loaded_data.columns:
+                n_sols = self.loaded_data['Sol'].nunique()
+                info_text += f"SOLs: {n_sols}\n"
+                
+            # Data quality info
+            if hasattr(self.data_loader, 'data_quality_metrics'):
+                quality = self.data_loader.data_quality_metrics
+                info_text += f"HR Quality: {quality.hr_quality_ratio:.1%}\n"
+                info_text += f"Mean HR: {quality.mean_hr:.1f} BPM\n"
+                
+            self.data_info_text.configure(state=tk.NORMAL)
+            self.data_info_text.delete(1.0, tk.END)
+            self.data_info_text.insert(tk.END, info_text)
+            self.data_info_text.configure(state=tk.DISABLED)
+            
+        except Exception as e:
+            logger.error(f"Error updating data info: {e}")
+            
+    def _update_data_info_valquiria(self, source_type: str):
+        """Update data information display with Valquiria-specific details."""
+        if self.loaded_data is None:
+            return
+            
+        try:
+            # Build comprehensive info text
+            info_text = "🚀 VALQUIRIA SPACE ANALOG SIMULATION\n"
+            info_text += "="*45 + "\n\n"
+            
+            info_text += f"Data Source: {source_type.upper()}\n"
+            info_text += f"Total Records: {len(self.loaded_data):,}\n"
+            
+            if 'subject' in self.loaded_data.columns:
+                subjects = sorted(self.loaded_data['subject'].unique())
+                info_text += f"Subjects: {len(subjects)}\n"
+                
+                # Show subject details
+                for subject in subjects:
+                    subject_data = self.loaded_data[self.loaded_data['subject'] == subject]
+                    if 'Sol' in subject_data.columns:
+                        sols = sorted(subject_data['Sol'].unique())
+                        info_text += f"  • {subject}: Sol {min(sols)}-{max(sols)} ({len(subject_data):,} records)\n"
+                    else:
+                        info_text += f"  • {subject}: {len(subject_data):,} records\n"
+                
+            if 'Sol' in self.loaded_data.columns:
+                sol_range = (self.loaded_data['Sol'].min(), self.loaded_data['Sol'].max())
+                info_text += f"\nSOL Range: {sol_range[0]} to {sol_range[1]}\n"
+                
+            # Data quality info
+            if hasattr(self.data_loader, 'data_quality_metrics') and self.data_loader.data_quality_metrics:
+                quality = self.data_loader.data_quality_metrics
+                info_text += f"\nDATA QUALITY METRICS:\n"
+                info_text += f"HR Quality: {quality.hr_quality_ratio:.1%}\n"
+                info_text += f"Mean HR: {quality.mean_hr:.1f} ± {quality.std_hr:.1f} BPM\n"
+                info_text += f"HR Range: {quality.hr_range[0]:.1f} - {quality.hr_range[1]:.1f} BPM\n"
+                info_text += f"Recording Coverage: {quality.temporal_coverage_hours:.1f} hours\n"
+                
+                # Quality assessment
+                if quality.hr_quality_ratio >= 0.9:
+                    info_text += "Status: ✅ EXCELLENT data quality\n"
+                elif quality.hr_quality_ratio >= 0.8:
+                    info_text += "Status: ✅ GOOD data quality\n"
+                elif quality.hr_quality_ratio >= 0.7:
+                    info_text += "Status: ⚠️ MODERATE data quality\n"
+                else:
+                    info_text += "Status: ⚠️ Poor data quality\n"
+            
+            info_text += f"\n🎯 Ready for HRV Analysis!"
+                
+            # Update the text widget
+            self.data_info_text.configure(state=tk.NORMAL)
+            self.data_info_text.delete(1.0, tk.END)
+            self.data_info_text.insert(tk.END, info_text)
+            self.data_info_text.configure(state=tk.DISABLED)
+            
+        except Exception as e:
+            logger.error(f"Error updating Valquiria data info: {e}")
+            # Fallback to basic info
+            self._update_data_info()
+            
+    def _update_subject_list(self):
+        """Update subject selection combobox.""" 
+        if self.loaded_data is None:
+            return
+            
+        try:
+            if 'subject' in self.loaded_data.columns:
+                subjects = ['All'] + sorted(self.loaded_data['subject'].unique().tolist())
+                self.subject_combo['values'] = subjects
+                self.subject_combo.set('All')
+            else:
+                self.subject_combo['values'] = ['All']
+                self.subject_combo.set('All')
+                
+        except Exception as e:
+            logger.error(f"Error updating subject list: {e}")
+            
+    def _on_subject_selected(self, event=None):
+        """Handle subject selection."""
+        self.current_subject = self.subject_var.get()
+        logger.info(f"Selected subject: {self.current_subject}")
+        
+    def _run_analysis(self):
+        """Run HRV analysis in a separate async thread to prevent GUI blocking."""
+        if self.analysis_running:
+            messagebox.showwarning("Warning", "Analysis is already running")
+            return
+            
+        if self.loaded_data is None:
+            messagebox.showwarning("Warning", "No data loaded")
+            return
+            
+        # Start async processor if not running
+        if not self.async_processor._is_running:
+            self.async_processor.start()
+            
+        self.analysis_running = True
+        self.process_button.configure(state='disabled')
+        
+        # Submit analysis task to async processor
+        analysis_task_id = f"hrv_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        success = self.async_processor.submit_task(
+            task_id=analysis_task_id,
+            func=self._perform_analysis_async,
+            timeout=self.analysis_timeout
+        )
+        
+        if success:
+            self.current_analysis_tasks.append(analysis_task_id)
+            self._update_status("Analysis submitted to async processor...")
+            self._monitor_analysis_task(analysis_task_id)
+        else:
+            self.analysis_running = False
+            self.process_button.configure(state='normal')
+            messagebox.showerror("Error", "Failed to submit analysis task")
+    
+    def _monitor_analysis_task(self, task_id: str):
+        """Monitor async analysis task progress."""
+        try:
+            task_status = self.async_processor.get_task_status(task_id)
+            
+            if task_status is None:
+                # Task not found, something went wrong
+                self.analysis_running = False
+                self.process_button.configure(state='normal')
+                messagebox.showerror("Error", "Analysis task lost")
+                return
+            
+            if task_status.value == "running":
+                # Task still running, check again in 1 second
+                self.root.after(1000, lambda: self._monitor_analysis_task(task_id))
+                return
+            
+            elif task_status.value == "completed":
+                # Task completed, get results
+                try:
+                    results = self.async_processor.get_task_result(task_id)
+                    if results:
+                        self.analysis_results = results
+                        self._update_results_display()
+                        self._update_plots_display()
+                        self._update_progress(100, "Analysis complete")
+                        messagebox.showinfo("Success", f"Async analysis completed successfully")
+                    else:
+                        messagebox.showerror("Error", "Analysis completed but no results returned")
+                except Exception as e:
+                    logger.error(f"Error retrieving analysis results: {e}")
+                    messagebox.showerror("Error", f"Error retrieving results: {e}")
+                    
+            elif task_status.value == "failed":
+                # Task failed
+                try:
+                    self.async_processor.get_task_result(task_id)  # This will raise the exception
+                except Exception as e:
+                    logger.error(f"Analysis task failed: {e}")
+                    messagebox.showerror("Error", f"Analysis failed: {e}")
+                    
+            elif task_status.value == "timeout":
+                messagebox.showerror("Error", "Analysis timed out")
+                
+            else:
+                messagebox.showerror("Error", f"Analysis task status: {task_status.value}")
+            
+        except Exception as e:
+            logger.error(f"Error monitoring analysis task: {e}")
+            messagebox.showerror("Error", f"Monitoring error: {e}")
+        
+        finally:
+            # Cleanup
+            self.analysis_running = False
+            self.process_button.configure(state='normal')
+            self._update_progress(0, "Ready")
+            if task_id in self.current_analysis_tasks:
+                self.current_analysis_tasks.remove(task_id)
+    
+    def _perform_analysis_async(self) -> Dict[str, Any]:
+        """
+        Perform the actual HRV analysis in async context.
+        This method runs in a separate thread and should not update GUI directly.
+        
+        Returns:
+            Dictionary with analysis results
+        """
+        try:
+            # Get analysis parameters
+            analysis_data = self._prepare_analysis_data()
+            if not analysis_data:
+                raise Exception("No analysis data prepared")
+            
+            selected_domains = []
+            if self.time_domain_var.get():
+                selected_domains.append(HRVDomain.TIME)
+            if self.frequency_domain_var.get():
+                selected_domains.append(HRVDomain.FREQUENCY)
+            if self.nonlinear_var.get():
+                selected_domains.append(HRVDomain.NONLINEAR)
+                
+            if not selected_domains:
+                raise Exception("No analysis domains selected")
+            
+            logger.info(f"Starting async analysis of {len(analysis_data)} subjects")
+            
+            # Process each subject using cached analysis
+            all_results = {}
+            total_subjects = len(analysis_data)
+            
+            for i, (key, data_segment) in enumerate(analysis_data.items()):
+                try:
+                    # Update progress through the callback (thread-safe)
+                    progress_pct = (i / total_subjects) * 80 + 10  # 10-90% range
+                    if self.async_processor.progress_callback:
+                        self.async_processor.progress_callback(f"Processing {key}...", progress_pct)
+                    
+                    # Use cached analysis
+                    result = self._perform_cached_analysis(key, data_segment, selected_domains)
+                    
+                    if result is not None:
+                        all_results[key] = result
+                        logger.info(f"Async: Successfully processed {key}")
+                    else:
+                        logger.warning(f"Async: Failed to process {key}")
+                    
+                except Exception as e:
+                    logger.error(f"Async: Error processing {key}: {e}")
+                    continue
+            
+            if not all_results:
+                raise Exception("No subjects could be processed successfully")
+            
+            # Advanced analysis if requested
+            if self.clustering_var.get():
+                if self.async_processor.progress_callback:
+                    self.async_processor.progress_callback("Running clustering analysis...", 90)
+                self._perform_clustering_analysis(all_results)
+                
+            if self.forecasting_var.get():
+                if self.async_processor.progress_callback:
+                    self.async_processor.progress_callback("Running forecasting analysis...", 95)
+                self._perform_forecasting_analysis(all_results)
+            
+            logger.info(f"Async analysis completed: {len(all_results)} subjects processed")
+            return all_results
+            
+        except Exception as e:
+            logger.error(f"Error in async analysis: {e}")
+            raise
+    
+    def _prepare_analysis_data(self) -> Optional[Dict[str, pd.DataFrame]]:
+        """Prepare data for analysis based on subject selection."""
+        try:
+            if self.current_subject == 'All' or self.current_subject is None:
+                # Group by subject and Sol if available
+                if 'subject' in self.loaded_data.columns and 'Sol' in self.loaded_data.columns:
+                    groups = self.loaded_data.groupby(['subject', 'Sol'])
+                    return {f"{subj}_Sol{sol}": group for (subj, sol), group in groups}
+                elif 'subject' in self.loaded_data.columns:
+                    groups = self.loaded_data.groupby('subject')
+                    return {str(subj): group for subj, group in groups}
+                else:
+                    return {'All': self.loaded_data}
+            else:
+                # Single subject analysis
+                if 'subject' in self.loaded_data.columns:
+                    subject_data = self.loaded_data[self.loaded_data['subject'] == self.current_subject]
+                    if 'Sol' in subject_data.columns:
+                        groups = subject_data.groupby('Sol')
+                        return {f"{self.current_subject}_Sol{sol}": group for sol, group in groups}
+                    else:
+                        return {self.current_subject: subject_data}
+                else:
+                    return {'Selected': self.loaded_data}
+                    
+        except Exception as e:
+            logger.error(f"Error preparing analysis data: {e}")
+            messagebox.showerror("Error", f"Error preparing data: {e}")
+            return None
+            
+    def _perform_clustering_analysis(self, results: Dict[str, Any]):
+        """Perform clustering analysis on HRV results.""" 
+        try:
+            # Extract HRV metrics for clustering
+            hrv_data_list = []
+            
+            for key, result in results.items():
+                if 'hrv_results' in result:
+                    hrv_result = result['hrv_results']
+                    
+                    # Flatten HRV metrics
+                    metrics_row = {'subject_session': key}
+                    
+                    for domain, metrics in hrv_result.items():
+                        if isinstance(metrics, dict):
+                            for metric_name, value in metrics.items():
+                                if isinstance(value, (int, float)):
+                                    metrics_row[f"{domain}_{metric_name}"] = value
+                                    
+                    hrv_data_list.append(metrics_row)
+                    
+            if len(hrv_data_list) < 3:
+                logger.warning("Insufficient data for clustering analysis")
+                return
+                
+            hrv_df = pd.DataFrame(hrv_data_list)
+            hrv_df = hrv_df.set_index('subject_session')
+            
+            # Perform clustering
+            cluster_result = self.hrv_clustering.perform_kmeans_clustering(hrv_df)
+            cluster_interpretation = self.hrv_clustering.interpret_clusters(cluster_result)
+            
+            # Store clustering results
+            self.analysis_results['clustering'] = {
+                'cluster_result': cluster_result,
+                'interpretation': cluster_interpretation
+            }
+            
+            logger.info(f"Clustering analysis completed: {cluster_result.n_clusters} clusters")
+            
+        except Exception as e:
+            logger.error(f"Error in clustering analysis: {e}")
+            
+    def _perform_forecasting_analysis(self, results: Dict[str, Any]):
+        """Perform forecasting analysis on HRV trends."""
+        try:
+            # Create time series data
+            time_series_data = {}
+            
+            for key, result in results.items():
+                if 'hrv_results' in result and 'time_domain' in result['hrv_results']:
+                    rmssd = result['hrv_results']['time_domain'].get('rmssd', 0)
+                    
+                    # Extract subject and SOL
+                    if '_Sol' in key:
+                        subject, sol_str = key.split('_Sol')
+                        sol = int(sol_str)
+                        
+                        if subject not in time_series_data:
+                            time_series_data[subject] = {}
+                        time_series_data[subject][sol] = rmssd
+                        
+            # Convert to time series format
+            for subject, sol_data in time_series_data.items():
+                sols = sorted(sol_data.keys())
+                values = [sol_data[sol] for sol in sols]
+                ts = pd.Series(values, index=sols, name=f"{subject}_rmssd")
+                
+                if len(ts) >= 4:  # Minimum for forecasting
+                    comparison = self.hrv_forecasting.compare_models(ts)
+                    
+                    if not hasattr(self, 'forecasting_results'):
+                        self.analysis_results['forecasting'] = {}
+                    
+                    self.analysis_results['forecasting'][subject] = {
+                        'time_series': ts,
+                        'model_comparison': comparison
+                    }
+                    
+            logger.info("Forecasting analysis completed")
+            
+        except Exception as e:
+            logger.error(f"Error in forecasting analysis: {e}")
+            
+    def _update_progress(self, value: float, message: str = ""):
+        """Update progress bar and status."""
+        def update():
+            self.progress_var.set(value)
+            if message:
+                self._update_status(message)
+        
+        self.root.after(0, update)
+        
+    def _update_results_display(self):
+        """Update the results display with analysis results."""
+        try:
+            if not self.analysis_results:
+                return
+                
+            # Clear existing results
+            self.results_text.delete(1.0, tk.END)
+            self.stats_text.delete(1.0, tk.END)
+            
+            # Results summary
+            results_text = "HRV Analysis Results\n"
+            results_text += "=" * 50 + "\n\n"
+            
+            # Individual subject results
+            for key, result in self.analysis_results.items():
+                if key in ['clustering', 'forecasting']:
+                    continue
+                    
+                results_text += f"Subject/Session: {key}\n"
+                results_text += "-" * 30 + "\n"
+                
+                if 'hrv_results' in result:
+                    hrv_results = result['hrv_results']
+                    
+                    # Time domain results
+                    if 'time_domain' in hrv_results:
+                        time_domain = hrv_results['time_domain']
+                        results_text += "Time Domain Metrics:\n"
+                        results_text += f"  SDNN: {time_domain.get('sdnn', 0):.1f} ms\n"
+                        results_text += f"  RMSSD: {time_domain.get('rmssd', 0):.1f} ms\n" 
+                        results_text += f"  pNN50: {time_domain.get('pnn50', 0):.1f}%\n"
+                        results_text += f"  Mean HR: {time_domain.get('mean_hr', 0):.1f} BPM\n\n"
+                        
+                    # Frequency domain results
+                    if 'frequency_domain' in hrv_results:
+                        freq_domain = hrv_results['frequency_domain']
+                        results_text += "Frequency Domain Metrics:\n"
+                        results_text += f"  LF Power: {freq_domain.get('lf_power', 0):.0f} ms²\n"
+                        results_text += f"  HF Power: {freq_domain.get('hf_power', 0):.0f} ms²\n"
+                        results_text += f"  LF/HF Ratio: {freq_domain.get('lf_hf_ratio', 0):.2f}\n"
+                        results_text += f"  LF nu: {freq_domain.get('lf_nu', 0):.1f}%\n"
+                        results_text += f"  HF nu: {freq_domain.get('hf_nu', 0):.1f}%\n\n"
+                        
+                results_text += "\n"
+                
+            # Clustering results
+            if 'clustering' in self.analysis_results:
+                results_text += "Clustering Analysis\n"
+                results_text += "=" * 30 + "\n"
+                
+                cluster_result = self.analysis_results['clustering']['cluster_result']
+                results_text += f"Number of clusters: {cluster_result.n_clusters}\n"
+                results_text += f"Silhouette score: {cluster_result.silhouette_score:.3f}\n\n"
+                
+                interpretation = self.analysis_results['clustering']['interpretation']
+                if 'overall_analysis' in interpretation:
+                    overall = interpretation['overall_analysis']
+                    results_text += f"Cluster quality: {overall.get('cluster_quality', 'Unknown')}\n"
+                    results_text += f"Phenotype distribution: {overall.get('phenotype_distribution', {})}\n\n"
+                    
+            # Forecasting results  
+            if 'forecasting' in self.analysis_results:
+                results_text += "Forecasting Analysis\n"
+                results_text += "=" * 30 + "\n"
+                
+                for subject, forecast_data in self.analysis_results['forecasting'].items():
+                    results_text += f"{subject}:\n"
+                    if 'model_comparison' in forecast_data:
+                        comparison = forecast_data['model_comparison']
+                        results_text += f"  Best model: {comparison.best_model_name}\n"
+                        if not comparison.performance_metrics.empty:
+                            best_rmse = comparison.performance_metrics.iloc[0]['rmse']
+                            results_text += f"  RMSE: {best_rmse:.2f}\n"
+                    results_text += "\n"
+                    
+            self.results_text.insert(tk.END, results_text)
+            
+            # Statistical summary
+            self._update_statistics_display()
+            
+        except Exception as e:
+            logger.error(f"Error updating results display: {e}")
+            
+    def _update_statistics_display(self):
+        """Update the statistics display."""
+        try:
+            stats_text = "Statistical Summary\n"
+            stats_text += "=" * 40 + "\n\n"
+            
+            # Collect all metrics for statistical analysis
+            all_metrics = {}
+            
+            for key, result in self.analysis_results.items():
+                if key in ['clustering', 'forecasting']:
+                    continue
+                    
+                if 'hrv_results' in result:
+                    hrv_results = result['hrv_results']
+                    
+                    for domain, metrics in hrv_results.items():
+                        if isinstance(metrics, dict):
+                            for metric_name, value in metrics.items():
+                                if isinstance(value, (int, float)):
+                                    full_name = f"{domain}_{metric_name}"
+                                    if full_name not in all_metrics:
+                                        all_metrics[full_name] = []
+                                    all_metrics[full_name].append(value)
+                                    
+            # Compute descriptive statistics
+            for metric_name, values in all_metrics.items():
+                if len(values) > 1:
+                    mean_val = np.mean(values)
+                    std_val = np.std(values)
+                    min_val = np.min(values)
+                    max_val = np.max(values)
+                    
+                    stats_text += f"{metric_name}:\n"
+                    stats_text += f"  Mean ± SD: {mean_val:.2f} ± {std_val:.2f}\n"
+                    stats_text += f"  Range: {min_val:.2f} - {max_val:.2f}\n"
+                    stats_text += f"  N: {len(values)}\n\n"
+                    
+            self.stats_text.insert(tk.END, stats_text)
+            
+        except Exception as e:
+            logger.error(f"Error updating statistics display: {e}")
+    
+    def _update_plots_display(self):
+        """Update the plots display with visualization controls."""
+        try:
+            if not self.analysis_results:
+                return
+                
+            # Clear existing plots
+            self._clear_plots_display()
+            
+            # Create plot control interface
+            main_frame = ttk.Frame(self.plots_scrollable_frame)
+            main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=10, pady=10)
+            
+            # Title
+            title_label = ttk.Label(main_frame, text="HRV Visualizations", style='Heading.TLabel')
+            title_label.grid(row=0, column=0, columnspan=2, pady=(0, 10), sticky=tk.W)
+            
+            # Count subjects processed
+            subject_count = len([k for k in self.analysis_results.keys() if k not in ['clustering', 'forecasting']])
+            
+            info_text = f"Analysis complete for {subject_count} subjects/sessions.\n"
+            info_text += "Click buttons below to generate and view plots.\n\n"
+            info_text += "Available visualizations:\n"
+            info_text += "• Poincaré plots (RR interval scatter plots)\n"
+            info_text += "• Power Spectral Density (frequency analysis)\n"
+            info_text += "• RR interval time series\n"
+            info_text += "• HRV metrics summary charts\n"
+            info_text += "• Combined Time Series (all subjects, all HRV metrics across SOL sessions)"
+            
+            info_label = ttk.Label(main_frame, text=info_text, justify=tk.LEFT)
+            info_label.grid(row=1, column=0, columnspan=2, pady=(0, 15), sticky=tk.W)
+            
+            # Subject selection for plots
+            ttk.Label(main_frame, text="Select Subject for Plots:", style='Heading.TLabel').grid(row=2, column=0, sticky=tk.W, pady=5)
+            
+            # Get available subjects
+            subjects = [k for k in self.analysis_results.keys() if k not in ['clustering', 'forecasting']]
+            
+            self.plot_subject_var = tk.StringVar()
+            self.plot_subject_combo = ttk.Combobox(main_frame, textvariable=self.plot_subject_var,
+                                                  values=subjects, state='readonly')
+            self.plot_subject_combo.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
+            
+            if subjects:
+                self.plot_subject_combo.set(subjects[0])  # Set first subject as default
+            
+            # Plot generation buttons
+            button_frame = ttk.Frame(main_frame)
+            button_frame.grid(row=3, column=0, columnspan=2, pady=15, sticky=(tk.W, tk.E))
+            
+            ttk.Button(button_frame, text="Generate Poincaré Plot",
+                      command=self._generate_poincare_plot).grid(row=0, column=0, padx=5, pady=2)
+            
+            ttk.Button(button_frame, text="Generate PSD Plot", 
+                      command=self._generate_psd_plot).grid(row=0, column=1, padx=5, pady=2)
+                      
+            ttk.Button(button_frame, text="Generate Time Series Plot",
+                      command=self._generate_timeseries_plot).grid(row=1, column=0, padx=5, pady=2)
+                      
+            ttk.Button(button_frame, text="Generate All Plots",
+                      command=self._generate_all_plots).grid(row=1, column=1, padx=5, pady=2)
+            
+            # Second row for additional plot types
+            ttk.Button(button_frame, text="Combined Time Series",
+                      command=self._generate_combined_time_series).grid(row=2, column=0, columnspan=2, padx=5, pady=2, sticky=(tk.W, tk.E))
+            
+            # Plot display area
+            self.plot_display_frame = ttk.LabelFrame(main_frame, text="Plot Display", padding="10")
+            self.plot_display_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=10)
+            
+            self.plot_status_label = ttk.Label(self.plot_display_frame, 
+                                              text="Select a subject and click a plot button to generate visualizations.")
+            self.plot_status_label.grid(row=0, column=0, pady=10)
+            
+            # Configure column weights
+            main_frame.columnconfigure(1, weight=1)
+            self.plots_scrollable_frame.columnconfigure(0, weight=1)
+            
+        except Exception as e:
+            logger.error(f"Error updating plots display: {e}")
+    
+    def _clear_plots_display(self):
+        """Clear all widgets from the plots display."""
+        for widget in self.plots_scrollable_frame.winfo_children():
+            widget.destroy()
+        
+        # Restore placeholder
+        self.plots_placeholder = ttk.Label(self.plots_scrollable_frame, 
+                                          text="Visualizations will appear here after analysis.\nClick 'Run Analysis' to generate interactive plots.",
+                                          justify=tk.CENTER)
+        self.plots_placeholder.grid(row=0, column=0, padx=20, pady=20)
+    
+    def _clear_plot_buttons(self):
+        """Clear existing plot buttons to avoid overlap."""
+        for widget in self.plot_display_frame.winfo_children():
+            if isinstance(widget, ttk.Button) and widget != self.plot_status_label:
+                widget.destroy()
+    
+    def _generate_poincare_plot(self):
+        """Generate and display Poincaré plot."""
+        try:
+            selected_subject = self.plot_subject_var.get()
+            if not selected_subject or selected_subject not in self.analysis_results:
+                messagebox.showwarning("Warning", "Please select a valid subject")
+                return
+                
+            result = self.analysis_results[selected_subject]
+            if 'rr_intervals' not in result:
+                messagebox.showwarning("Warning", "No RR interval data available for selected subject")
+                return
+            
+            rr_intervals = result['rr_intervals']
+            
+            # Clear previous plot buttons
+            self._clear_plot_buttons()
+            
+            # Update status
+            self.plot_status_label.configure(text=f"Generating Poincaré plot for {selected_subject}...")
+            self.root.update_idletasks()
+            
+            # Generate plot using interactive plotter
+            fig = self.interactive_plotter.create_poincare_plot(
+                rr_intervals, 
+                title=f"Poincaré Plot - {selected_subject}"
+            )
+            
+            # Save plot with unique filename
+            safe_subject = selected_subject.replace('/', '_').replace('\\', '_')
+            plot_path = Path(f"poincare_plot_{safe_subject}.html")
+            self.interactive_plotter.export_html(fig, str(plot_path))
+            
+            # Update status with success message and instructions
+            success_text = f"✅ Poincaré plot generated for {selected_subject}\n\n"
+            success_text += f"Plot saved as: {plot_path.absolute()}\n\n"
+            success_text += "• SD1 (short-term variability) vs SD2 (long-term variability)\n"
+            success_text += "• Each point represents consecutive RR intervals\n"
+            success_text += "• Ellipse shows distribution pattern\n\n"
+            success_text += "Open the HTML file in your browser to view the interactive plot."
+            
+            self.plot_status_label.configure(text=success_text)
+            
+            # Add button to open plot
+            open_button = ttk.Button(self.plot_display_frame, text="Open Poincaré Plot",
+                                   command=lambda: self._open_plot_file(plot_path))
+            open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
+            
+        except Exception as e:
+            logger.error(f"Error generating Poincaré plot: {e}")
+            self.plot_status_label.configure(text=f"Error generating Poincaré plot: {e}")
+    
+    def _generate_psd_plot(self):
+        """Generate and display Power Spectral Density plot."""
+        try:
+            selected_subject = self.plot_subject_var.get()
+            if not selected_subject or selected_subject not in self.analysis_results:
+                messagebox.showwarning("Warning", "Please select a valid subject")
+                return
+                
+            result = self.analysis_results[selected_subject]
+            if 'rr_intervals' not in result:
+                messagebox.showwarning("Warning", "No RR interval data available for selected subject")
+                return
+            
+            rr_intervals = result['rr_intervals']
+            
+            # Clear previous plot buttons
+            self._clear_plot_buttons()
+            
+            # Update status
+            self.plot_status_label.configure(text=f"Generating PSD plot for {selected_subject}...")
+            self.root.update_idletasks()
+            
+            # Generate plot
+            fig = self.interactive_plotter.create_psd_plot(
+                rr_intervals,
+                title=f"Power Spectral Density - {selected_subject}"
+            )
+            
+            # Save plot with unique filename
+            safe_subject = selected_subject.replace('/', '_').replace('\\', '_')
+            plot_path = Path(f"psd_plot_{safe_subject}.html")
+            self.interactive_plotter.export_html(fig, str(plot_path))
+            
+            # Update status
+            success_text = f"✅ Power Spectral Density plot generated for {selected_subject}\n\n"
+            success_text += f"Plot saved as: {plot_path.absolute()}\n\n"
+            success_text += "Frequency bands:\n"
+            success_text += "• VLF: 0.003-0.04 Hz (Very Low Frequency)\n"
+            success_text += "• LF: 0.04-0.15 Hz (Low Frequency)\n"
+            success_text += "• HF: 0.15-0.4 Hz (High Frequency)\n\n"
+            success_text += "Open the HTML file in your browser to view the interactive plot."
+            
+            self.plot_status_label.configure(text=success_text)
+            
+            # Add button to open plot
+            open_button = ttk.Button(self.plot_display_frame, text="Open PSD Plot",
+                                   command=lambda: self._open_plot_file(plot_path))
+            open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
+            
+        except Exception as e:
+            logger.error(f"Error generating PSD plot: {e}")
+            self.plot_status_label.configure(text=f"Error generating PSD plot: {e}")
+    
+    def _generate_timeseries_plot(self):
+        """Generate and display RR interval time series plot."""
+        try:
+            selected_subject = self.plot_subject_var.get()
+            if not selected_subject or selected_subject not in self.analysis_results:
+                messagebox.showwarning("Warning", "Please select a valid subject")
+                return
+                
+            result = self.analysis_results[selected_subject]
+            if 'rr_intervals' not in result:
+                messagebox.showwarning("Warning", "No RR interval data available for selected subject")
+                return
+            
+            rr_intervals = result['rr_intervals']
+            
+            # Clear previous plot buttons
+            self._clear_plot_buttons()
+            
+            # Update status
+            self.plot_status_label.configure(text=f"Generating time series plot for {selected_subject}...")
+            self.root.update_idletasks()
+            
+            # Generate plot
+            fig = self.interactive_plotter.create_time_series_plot(
+                rr_intervals,
+                title=f"RR Interval Time Series - {selected_subject}"
+            )
+            
+            # Save plot with unique filename
+            safe_subject = selected_subject.replace('/', '_').replace('\\', '_')
+            plot_path = Path(f"timeseries_plot_{safe_subject}.html")
+            self.interactive_plotter.export_html(fig, str(plot_path))
+            
+            # Update status
+            success_text = f"✅ RR interval time series plot generated for {selected_subject}\n\n"
+            success_text += f"Plot saved as: {plot_path.absolute()}\n\n"
+            success_text += "Shows:\n"
+            success_text += "• RR interval values over time\n"
+            success_text += "• Heart rate variability patterns\n"
+            success_text += "• Trend analysis if enabled\n\n"
+            success_text += "Open the HTML file in your browser to view the interactive plot."
+            
+            self.plot_status_label.configure(text=success_text)
+            
+            # Add button to open plot
+            open_button = ttk.Button(self.plot_display_frame, text="Open Time Series Plot",
+                                   command=lambda: self._open_plot_file(plot_path))
+            open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
+            
+        except Exception as e:
+            logger.error(f"Error generating time series plot: {e}")
+            self.plot_status_label.configure(text=f"Error generating time series plot: {e}")
+    
+    def _generate_all_plots(self):
+        """Generate all available plots for the selected subject."""
+        try:
+            selected_subject = self.plot_subject_var.get()
+            if not selected_subject or selected_subject not in self.analysis_results:
+                messagebox.showwarning("Warning", "Please select a valid subject")
+                return
+            
+            # Clear previous plot buttons
+            self._clear_plot_buttons()
+            
+            # Update status
+            self.plot_status_label.configure(text=f"Generating comprehensive dashboard for {selected_subject}...")
+            self.root.update_idletasks()
+            
+            # Generate dashboard with all plots
+            result = self.analysis_results[selected_subject]
+            if 'rr_intervals' not in result:
+                messagebox.showwarning("Warning", "No RR interval data available for selected subject")
+                return
+            
+            rr_intervals = result['rr_intervals']
+            hrv_results = result.get('hrv_results', {})
+            
+            # Create comprehensive dashboard
+            dashboard_fig = self.interactive_plotter.create_hrv_dashboard(
+                rr_intervals,
+                hrv_results,
+                subject_id=selected_subject,
+                session_id="Analysis"
+            )
+            
+            # Save dashboard with unique filename
+            safe_subject = selected_subject.replace('/', '_').replace('\\', '_')
+            dashboard_path = Path(f"hrv_dashboard_{safe_subject}.html")
+            self.interactive_plotter.export_html(dashboard_fig, str(dashboard_path))
+            
+            # Update status
+            success_text = f"✅ HRV Analysis Dashboard generated for {selected_subject}\n\n"
+            success_text += f"Comprehensive dashboard saved as:\n{dashboard_path.absolute()}\n\n"
+            success_text += "Includes:\n"
+            success_text += "• RR interval time series\n"
+            success_text += "• Poincaré plot with ellipse\n"
+            success_text += "• Power spectral density\n"
+            success_text += "• HRV metrics summary\n"
+            success_text += "• Frequency band distribution\n"
+            success_text += "• Time vs frequency domain correlation\n\n"
+            success_text += "Open the HTML file in your browser for the full interactive dashboard."
+            
+            self.plot_status_label.configure(text=success_text)
+            
+            # Add button to open dashboard
+            open_button = ttk.Button(self.plot_display_frame, text="Open HRV Dashboard",
+                                   command=lambda: self._open_plot_file(dashboard_path))
+            open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
+            
+        except Exception as e:
+            logger.error(f"Error generating HRV dashboard: {e}")
+            self.plot_status_label.configure(text=f"Error generating HRV dashboard: {e}")
+    
+    def _generate_combined_time_series(self):
+        """Generate combined time series analysis for all subjects and HRV metrics."""
+        try:
+            if not self.analysis_results:
+                messagebox.showwarning("Warning", "No analysis results available")
+                return
+            
+            # Update status
+            self.plot_status_label.configure(text="Generating combined time series analysis for all subjects...")
+            self.root.update_idletasks()
+            
+            # Generate comprehensive time series analysis
+            combined_fig = self.interactive_plotter.create_combined_time_series_analysis(
+                analysis_results=self.analysis_results
+            )
+            
+            # Clear any existing buttons from previous plots first
+            self._clear_plot_buttons()
+            
+            # Save the combined analysis with unique filename
+            plot_path = Path("hrv_combined_time_series_analysis.html")
+            self.interactive_plotter.export_html(combined_fig, str(plot_path))
+            
+            # Update status with success message
+            success_text = "✅ Combined Time Series Analysis Generated!\n\n"
+            success_text += f"Comprehensive analysis saved as:\n{plot_path.absolute()}\n\n"
+            success_text += "📊 Features:\n"
+            success_text += "• Time series for all key HRV metrics\n"
+            success_text += "• All subjects compared across SOL sessions\n"
+            success_text += "• Individual trend lines (dashed) for each subject\n"
+            success_text += "• Interactive visualization with hover details\n\n"
+            success_text += "📈 Metrics included:\n"
+            success_text += "• Time Domain: SDNN, RMSSD, pNN50, Mean HR\n"
+            success_text += "• Frequency Domain: LF Power, HF Power, LF/HF Ratio, LF nu, HF nu\n\n"
+            success_text += "🔍 Insights:\n"
+            success_text += "• Compare adaptation patterns between subjects\n"
+            success_text += "• Identify trends across space simulation timeline\n"
+            success_text += "• Analyze individual vs group responses\n\n"
+            success_text += "Open the HTML file in your browser for full-screen responsive interactive analysis!"
+            
+            self.plot_status_label.configure(text=success_text)
+            
+            # Add button to open the combined analysis
+            open_button = ttk.Button(self.plot_display_frame, text="Open Combined Time Series",
+                                   command=lambda: self._open_plot_file(plot_path))
+            open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
+            
+            # Add button to generate custom metrics selection
+            custom_button = ttk.Button(self.plot_display_frame, text="Custom Metrics Selection",
+                                     command=self._generate_custom_time_series)
+            custom_button.grid(row=2, column=0, pady=5, sticky=(tk.W, tk.E))
+            
+        except Exception as e:
+            logger.error(f"Error generating combined time series: {e}")
+            self.plot_status_label.configure(text=f"Error generating combined time series: {e}")
+    
+    def _generate_custom_time_series(self):
+        """Generate time series with custom metric selection."""
+        try:
+            # Available metrics
+            available_metrics = [
+                'time_domain_sdnn', 'time_domain_rmssd', 'time_domain_pnn50', 'time_domain_mean_hr',
+                'time_domain_cvnn', 'frequency_domain_lf_power', 'frequency_domain_hf_power',
+                'frequency_domain_lf_hf_ratio', 'frequency_domain_lf_nu', 'frequency_domain_hf_nu',
+                'frequency_domain_total_power', 'nonlinear_sd1', 'nonlinear_sd2', 'nonlinear_dfa_alpha1'
+            ]
+            
+            # Create custom dialog for metric selection
+            custom_dialog = tk.Toplevel(self.root)
+            custom_dialog.title("Select HRV Metrics for Time Series Analysis")
+            custom_dialog.geometry("500x400")
+            custom_dialog.transient(self.root)
+            custom_dialog.grab_set()
+            
+            # Instructions
+            ttk.Label(custom_dialog, 
+                     text="Select HRV metrics to include in the time series analysis:",
+                     style='Heading.TLabel').pack(pady=10)
+            
+            # Scrollable frame for checkboxes
+            canvas = tk.Canvas(custom_dialog)
+            scrollbar = ttk.Scrollbar(custom_dialog, orient="vertical", command=canvas.yview)
+            scrollable_frame = ttk.Frame(canvas)
+            
+            scrollable_frame.bind(
+                "<Configure>",
+                lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            )
+            
+            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+            
+            # Metric selection variables
+            metric_vars = {}
+            for metric in available_metrics:
+                var = tk.BooleanVar()
+                # Default selection for common metrics
+                if metric in ['time_domain_sdnn', 'time_domain_rmssd', 'frequency_domain_lf_hf_ratio']:
+                    var.set(True)
+                
+                metric_vars[metric] = var
+                
+                # Create nice display name
+                display_name = metric.replace('_', ' ').title()
+                display_name = display_name.replace('Time Domain', 'TD:').replace('Frequency Domain', 'FD:').replace('Nonlinear', 'NL:')
+                
+                ttk.Checkbutton(scrollable_frame, text=display_name, variable=var).pack(anchor='w', padx=10, pady=2)
+            
+            canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+            scrollbar.pack(side="right", fill="y")
+            
+            # Buttons
+            button_frame = ttk.Frame(custom_dialog)
+            button_frame.pack(pady=10)
+            
+            def generate_custom_plot():
+                selected_metrics = [metric for metric, var in metric_vars.items() if var.get()]
+                
+                if not selected_metrics:
+                    messagebox.showwarning("Warning", "Please select at least one metric")
+                    return
+                
+                custom_dialog.destroy()
+                
+                # Update status
+                self.plot_status_label.configure(text=f"Generating custom time series for {len(selected_metrics)} metrics...")
+                self.root.update_idletasks()
+                
+                # Generate custom analysis
+                custom_fig = self.interactive_plotter.create_combined_time_series_analysis(
+                    analysis_results=self.analysis_results,
+                    metrics_to_plot=selected_metrics
+                )
+                
+                # Save custom analysis
+                plot_path = Path("hrv_custom_time_series_analysis.html")
+                self.interactive_plotter.export_html(custom_fig, str(plot_path))
+                
+                # Update status
+                success_text = f"✅ Custom Time Series Analysis Generated!\n\n"
+                success_text += f"Analysis with {len(selected_metrics)} metrics saved as:\n{plot_path.absolute()}\n\n"
+                success_text += "📊 Your selected metrics are displayed across all subjects and SOL sessions.\n"
+                success_text += "Open the HTML file in your browser for the interactive analysis."
+                
+                self.plot_status_label.configure(text=success_text)
+                
+                # Clear existing buttons and add new one
+                self._clear_plot_buttons()
+                
+                open_button = ttk.Button(self.plot_display_frame, text="Open Custom Time Series",
+                                       command=lambda: self._open_plot_file(plot_path))
+                open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
+            
+            def cancel_dialog():
+                custom_dialog.destroy()
+            
+            ttk.Button(button_frame, text="Generate Plot", command=generate_custom_plot).pack(side=tk.LEFT, padx=5)
+            ttk.Button(button_frame, text="Cancel", command=cancel_dialog).pack(side=tk.LEFT, padx=5)
+            
+        except Exception as e:
+            logger.error(f"Error in custom time series generation: {e}")
+            messagebox.showerror("Error", f"Error generating custom time series: {e}")
+    
+    def _open_plot_file(self, file_path):
+        """Open plot file in default browser."""
+        try:
+            import webbrowser
+            webbrowser.open(f"file://{file_path.absolute()}")
+        except Exception as e:
+            logger.error(f"Error opening plot file: {e}")
+            messagebox.showerror("Error", f"Could not open plot file: {e}")
+            
+    def _clear_results(self):
+        """Clear all analysis results.""" 
+        self.analysis_results = {}
+        self.results_text.delete(1.0, tk.END)
+        self.stats_text.delete(1.0, tk.END)
+        self._clear_plots_display()
+        self._update_status("Results cleared")
+        
+    def _export_results(self):
+        """Export analysis results to file."""
+        try:
+            if not self.analysis_results:
+                messagebox.showwarning("Warning", "No results to export")
+                return
+                
+            export_path = filedialog.asksaveasfilename(
+                title="Export Results",
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json"), ("CSV files", "*.csv"), ("All files", "*.*")]
+            )
+            
+            if export_path:
+                if export_path.endswith('.csv'):
+                    self._export_results_csv(export_path)
+                else:
+                    self._export_results_json(export_path)
+                    
+                messagebox.showinfo("Success", f"Results exported to {export_path}")
+                
+        except Exception as e:
+            logger.error(f"Error exporting results: {e}")
+            messagebox.showerror("Error", f"Export failed: {e}")
+            
+    def _export_results_json(self, file_path: str):
+        """Export results to JSON format."""
+        # Convert numpy arrays to lists for JSON serialization
+        exportable_results = {}
+        
+        for key, result in self.analysis_results.items():
+            exportable_results[key] = self._make_json_serializable(result)
+            
+        with open(file_path, 'w') as f:
+            json.dump(exportable_results, f, indent=2, default=str)
+            
+    def _export_results_csv(self, file_path: str):
+        """Export results to CSV format."""
+        # Flatten results for CSV export
+        flattened_data = []
+        
+        for key, result in self.analysis_results.items():
+            if key in ['clustering', 'forecasting']:
+                continue
+                
+            if 'hrv_results' in result:
+                row = {'subject_session': key}
+                hrv_results = result['hrv_results']
+                
+                for domain, metrics in hrv_results.items():
+                    if isinstance(metrics, dict):
+                        for metric_name, value in metrics.items():
+                            if isinstance(value, (int, float)):
+                                row[f"{domain}_{metric_name}"] = value
+                                
+                flattened_data.append(row)
+                
+        if flattened_data:
+            df = pd.DataFrame(flattened_data)
+            df.to_csv(file_path, index=False)
+            
+    def _export_plots(self):
+        """Export generated plots."""
+        try:
+            if not self.analysis_results:
+                messagebox.showwarning("Warning", "No results to export plots from")
+                return
+                
+            export_dir = filedialog.askdirectory(title="Select Directory for Plot Export")
+            
+            if export_dir:
+                # Export individual plots for each subject
+                plot_count = 0
+                
+                for key, result in self.analysis_results.items():
+                    if key in ['clustering', 'forecasting']:
+                        continue
+                        
+                    if 'rr_intervals' in result:
+                        rr_intervals = result['rr_intervals']
+                        
+                        # Create Poincaré plot
+                        poincare_fig = self.interactive_plotter.create_poincare_plot(
+                            rr_intervals, title=f"Poincaré Plot - {key}"
+                        )
+                        
+                        plot_path = Path(export_dir) / f"poincare_{key}.html"
+                        self.interactive_plotter.export_html(poincare_fig, str(plot_path))
+                        plot_count += 1
+                        
+                        # Create PSD plot
+                        psd_fig = self.interactive_plotter.create_psd_plot(
+                            rr_intervals, title=f"Power Spectral Density - {key}"
+                        )
+                        
+                        plot_path = Path(export_dir) / f"psd_{key}.html"
+                        self.interactive_plotter.export_html(psd_fig, str(plot_path))
+                        plot_count += 1
+                        
+                messagebox.showinfo("Success", f"Exported {plot_count} plots to {export_dir}")
+                
+        except Exception as e:
+            logger.error(f"Error exporting plots: {e}")
+            messagebox.showerror("Error", f"Plot export failed: {e}")
+            
+    def _generate_report(self):
+        """Generate comprehensive analysis report."""
+        try:
+            if not self.analysis_results:
+                messagebox.showwarning("Warning", "No results to generate report from") 
+                return
+                
+            report_path = filedialog.asksaveasfilename(
+                title="Save Analysis Report",
+                defaultextension=".html",
+                filetypes=[("HTML files", "*.html"), ("Text files", "*.txt"), ("All files", "*.*")]
+            )
+            
+            if report_path:
+                if report_path.endswith('.html'):
+                    self._generate_html_report(report_path)
+                else:
+                    self._generate_text_report(report_path)
+                    
+                messagebox.showinfo("Success", f"Report generated: {report_path}")
+                
+        except Exception as e:
+            logger.error(f"Error generating report: {e}")
+            messagebox.showerror("Error", f"Report generation failed: {e}")
+            
+    def _generate_html_report(self, file_path: str):
+        """Generate HTML report with embedded plots."""
+        html_content = f"""
+        <html>
+        <head>
+            <title>HRV Analysis Report</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                h1, h2, h3 {{ color: #333; }}
+                table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
+                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                th {{ background-color: #f2f2f2; }}
+                .metric {{ margin: 10px 0; }}
+            </style>
+        </head>
+        <body>
+            <h1>Enhanced HRV Analysis Report</h1>
+            <p>Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            
+            <h2>Analysis Summary</h2>
+            <p>Total subjects analyzed: {len([k for k in self.analysis_results.keys() if k not in ['clustering', 'forecasting']])}</p>
+            
+            <h2>Individual Results</h2>
+        """
+        
+        for key, result in self.analysis_results.items():
+            if key in ['clustering', 'forecasting']:
+                continue
+                
+            html_content += f"<h3>{key}</h3>\n"
+            
+            if 'hrv_results' in result:
+                hrv_results = result['hrv_results']
+                html_content += "<table>\n<tr><th>Metric</th><th>Value</th></tr>\n"
+                
+                for domain, metrics in hrv_results.items():
+                    if isinstance(metrics, dict):
+                        for metric_name, value in metrics.items():
+                            if isinstance(value, (int, float)):
+                                html_content += f"<tr><td>{domain}_{metric_name}</td><td>{value:.2f}</td></tr>\n"
+                                
+                html_content += "</table>\n"
+                
+        html_content += """
+        </body>
+        </html>
+        """
+        
+        with open(file_path, 'w') as f:
+            f.write(html_content)
+            
+    def _generate_text_report(self, file_path: str):
+        """Generate text-based report."""
+        report_text = self.results_text.get(1.0, tk.END)
+        
+        with open(file_path, 'w') as f:
+            f.write(report_text)
+            
+    def _make_json_serializable(self, obj):
+        """Convert numpy arrays and other non-serializable objects for JSON export."""
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, dict):
+            return {key: self._make_json_serializable(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_json_serializable(item) for item in obj]
+        elif isinstance(obj, (np.integer, np.floating)):
+            return float(obj)
+        else:
+            return obj
+            
+    def _show_about(self):
+        """Show about dialog."""
+        about_text = """Enhanced HRV Analysis System
+Version 2.0.0
+
+A comprehensive tool for Heart Rate Variability analysis 
+featuring advanced statistical methods, machine learning, 
+and interactive visualizations.
+
+Created for the Valquiria Space Analog Simulation project.
+
+© 2024 Enhanced HRV Analysis Team"""
+        
+        messagebox.showinfo("About", about_text)
+        
+    def _apply_memory_protection(self, hr_data: pd.Series, subject_key: str) -> pd.Series:
+        """
+        Smart memory management that balances performance with statistical power.
+        
+        CRITICAL FIX: Intelligent adaptive scaling instead of hard limits
+        - Minimum sample sizes for valid HRV statistics
+        - Progressive scaling based on data characteristics
+        - Performance vs. accuracy trade-offs
+        - Preserve temporal distribution when sampling
+        """
+        original_size = len(hr_data)
+        
+        # Smart memory protection thresholds
+        if self.fast_mode_var.get():
+            # Fast mode: Prioritize speed with minimum valid sample size
+            target_size = min(1000, original_size)
+            mode_description = "Fast mode"
+        else:
+            # Full analysis mode: Intelligent scaling based on data size
+            if original_size <= 5000:
+                # Small datasets: Use all data
+                target_size = original_size
+                mode_description = "Full analysis (small dataset)"
+            elif original_size <= 20000:
+                # Medium datasets: Use most data with minimal reduction
+                target_size = min(15000, original_size)
+                mode_description = "Memory optimized (medium dataset)"
+            elif original_size <= 50000:
+                # Large datasets: Intelligent sampling to maintain statistical power
+                target_size = min(25000, original_size)
+                mode_description = "Memory optimized (large dataset)"
+            else:
+                # Very large datasets: Aggressive but scientifically valid sampling
+                target_size = min(30000, original_size)
+                mode_description = "Memory optimized (very large dataset)"
+        
+        # Apply intelligent sampling if reduction is needed
+        if target_size < original_size:
+            # SCIENTIFIC SAMPLING: Preserve temporal distribution
+            # Use systematic sampling to maintain temporal characteristics
+            sampling_interval = original_size // target_size
+            
+            if sampling_interval > 1:
+                # Systematic sampling with random start
+                start_idx = np.random.randint(0, min(sampling_interval, original_size - target_size))
+                indices = np.arange(start_idx, original_size, sampling_interval)[:target_size]
+                hr_data_sampled = hr_data.iloc[indices]
+                
+                logger.info(f"{mode_description}: Intelligently sampled {subject_key} from {original_size:,} to {len(hr_data_sampled):,} samples (systematic sampling)")
+            else:
+                # Random sampling as fallback
+                hr_data_sampled = hr_data.sample(n=target_size, random_state=42)
+                logger.info(f"{mode_description}: Randomly sampled {subject_key} from {original_size:,} to {len(hr_data_sampled):,} samples")
+                
+            return hr_data_sampled
+        else:
+            logger.info(f"{mode_description}: Using all {original_size:,} samples for {subject_key}")
+            return hr_data
+    
+    def _perform_cached_analysis(self, subject_key: str, data_segment: pd.DataFrame, selected_domains: List[HRVDomain]) -> Optional[Dict[str, Any]]:
+        """
+        Perform HRV analysis with intelligent caching for faster repeated processing.
+        
+        Args:
+            subject_key: Identifier for the subject/session
+            data_segment: Data for this subject/session
+            selected_domains: HRV domains to analyze
+            
+        Returns:
+            Analysis results dictionary or None if analysis failed
+        """
+        try:
+            # Generate analysis configuration for cache key
+            analysis_config = {
+                'fast_mode': self.fast_mode_var.get(),
+                'selected_domains': [domain.value for domain in selected_domains],
+                'bootstrap_ci': self.bootstrap_ci_var.get() and not self.fast_mode_var.get(),
+                'max_bootstrap_samples': self.max_bootstrap_samples,
+                'analysis_timeout': self.analysis_timeout,
+                'cache_version': '2.1'  # Version for cache invalidation
+            }
+            
+            # Extract subject ID and session info
+            if '_Sol' in subject_key:
+                subject_id = subject_key.split('_Sol')[0]
+            else:
+                subject_id = subject_key
+            
+            # Check cache first  
+            logger.debug(f"Checking cache for {subject_key}")
+            cached_result = self.results_cache.get(
+                subject_id=subject_id,
+                session_id=subject_key,
+                data=data_segment,
+                analysis_config=analysis_config
+            )
+            
+            if cached_result is not None:
+                logger.info(f"🚀 Cache HIT: Using cached results for {subject_key}")
+                return cached_result
+            
+            # Cache miss - perform fresh analysis
+            logger.info(f"💾 Cache MISS: Computing fresh analysis for {subject_key}")
+            
+            # CRITICAL FIX: Smart memory management
+            hr_data = data_segment['heart_rate [bpm]']
+            hr_data = self._apply_memory_protection(hr_data, subject_key)
+            
+            # Signal processing with timeout
+            def process_subject():
+                rr_intervals, processing_info = self.signal_processor.compute_rr_intervals(hr_data)
+                
+                if len(rr_intervals) < 50:
+                    logger.warning(f"Insufficient RR intervals for {subject_key}: {len(rr_intervals)}")
+                    return None
+                    
+                # HRV analysis with performance optimizations
+                include_ci = self.bootstrap_ci_var.get() and not self.fast_mode_var.get()
+                hrv_results = self.hrv_processor.compute_hrv_metrics(
+                    rr_intervals,
+                    domains=selected_domains,
+                    include_confidence_intervals=include_ci
+                )
+                
+                return {
+                    'rr_intervals': rr_intervals,
+                    'processing_info': processing_info,
+                    'hrv_results': hrv_results,
+                    'data_info': {
+                        'original_samples': len(data_segment),
+                        'processed_samples': len(hr_data),
+                        'rr_intervals_count': len(rr_intervals)
+                    },
+                    'subject_key': subject_key
+                }
+            
+            # Execute with timeout protection
+            result = None
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(process_subject)
+                try:
+                    result = future.result(timeout=60)  # 60 second timeout per subject
+                except FutureTimeoutError:
+                    logger.warning(f"⏱️ Timeout processing {subject_key}, skipping...")
+                    return None
+            
+            if result is None:
+                return None
+            
+            # Cache the result for future use
+            cache_metadata = {
+                'analysis_timestamp': datetime.now().isoformat(),
+                'original_samples': result['data_info']['original_samples'],
+                'processed_samples': result['data_info']['processed_samples'],
+                'rr_intervals': result['data_info']['rr_intervals_count'],
+                'domains_analyzed': [domain.value for domain in selected_domains]
+            }
+            
+            cache_success = self.results_cache.put(
+                subject_id=subject_id,
+                session_id=subject_key,
+                data=data_segment,
+                analysis_config=analysis_config,
+                result=result,
+                ttl_hours=24.0,  # 24 hour cache TTL
+                metadata=cache_metadata
+            )
+            
+            if cache_success:
+                logger.info(f"✅ Successfully cached results for {subject_key}")
+            else:
+                logger.warning(f"⚠️ Failed to cache results for {subject_key}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in cached analysis for {subject_key}: {e}")
+            return None
+    
+    def _get_cache_status_info(self) -> Dict[str, Any]:
+        """Get current cache statistics for display."""
+        try:
+            return self.results_cache.get_cache_stats()
+        except Exception as e:
+            logger.error(f"Error getting cache stats: {e}")
+            return {'error': str(e)}
+    
+    def _setup_performance_monitor(self):
+        """Setup the performance monitoring section."""
+        try:
+            monitor_frame = ttk.Frame(self.left_panel, padding="2")
+            monitor_frame.grid(row=7, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+            
+            # Initialize performance monitor with provider functions
+            self.performance_monitor = PerformanceMonitor(
+                parent_frame=monitor_frame,
+                cache_provider=self._get_cache_stats,
+                async_processor_provider=self._get_async_processor_stats
+            )
+            
+            # Auto-start monitoring if configured
+            if self.settings_panel.get_settings().get('monitor_auto_start', False):
+                self.performance_monitor.start_monitoring()
+                
+            logger.info("Performance monitor initialized")
+            
+        except Exception as e:
+            logger.error(f"Error setting up performance monitor: {e}")
+    
+def main():
+    """Main entry point for the application.""" 
+    # Setup logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler('hrv_analysis.log'),
+            logging.StreamHandler()
+        ]
+    )
+    
+    # Create and run application
+    root = tk.Tk()
+    app = HRVAnalysisApp(root)
+    
+    try:
+        root.mainloop()
+    except KeyboardInterrupt:
+        logger.info("Application interrupted by user")
+    except Exception as e:
+        logger.error(f"Unexpected error in main loop: {e}")
+        messagebox.showerror("Fatal Error", f"Application error: {e}")
+        
+if __name__ == "__main__":
+    main() 

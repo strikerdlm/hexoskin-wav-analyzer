@@ -1,0 +1,36 @@
+{
+	"folders": [
+		{
+			"path": ".",
+			"name": "Valquiria Data"
+		}
+	],
+	"settings": {
+		"terminal.integrated.cwd": "${workspaceFolder}",
+		"python.defaultInterpreterPath": "${workspaceFolder}",
+		"python.terminal.activateEnvironment": true,
+		"python.terminal.activateEnvInCurrentTerminal": true,
+		"files.exclude": {
+			"**/__pycache__": true,
+			"**/*.pyc": true,
+			"**/.git": true,
+			"**/.gitignore": true,
+			"**/.DS_Store": true,
+			"**/Thumbs.db": true
+		},
+		"search.exclude": {
+			"**/node_modules": true,
+			"**/bower_components": true,
+			"**/*.code-search": true,
+			"**/__pycache__": true,
+			"**/*.pyc": true
+		},
+		"files.watcherExclude": {
+			"**/__pycache__/**": true,
+			"**/*.pyc": true,
+			"**/.git/objects/**": true,
+			"**/.git/subtree-cache/**": true,
+			"**/node_modules/**": true
+		}
+	}
+}

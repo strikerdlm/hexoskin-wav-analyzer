@@ -1,5 +1,7 @@
 import os
 import json
+import platform
+import traceback
 import wave
 import struct
 import numpy as np
@@ -12,6 +14,7 @@ import matplotlib.pyplot as plt
 import scipy
 from scipy import stats, signal, interpolate
 import warnings
+import platform
 import csv
 from datetime import datetime, timedelta
 
@@ -1364,9 +1367,20 @@ class HexoskinWavLoader:
                 
                 # Automatically run post-hoc tests if result is significant
                 if p_value < 0.05:
-                    post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
-                        data_values, data_names, 'anova', alpha=0.05
-                    )
+                    try:
+                        post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
+                            data_values, data_names, 'anova', alpha=0.05
+                        )
+                        # If post-hoc calculation failed, log the error but don't stop the entire analysis
+                        if 'error' in post_hoc_results:
+                            print(f"Post-hoc calculation error: {post_hoc_results['error']}")
+                    except Exception as e:
+                        print(f"Error during post-hoc test calculation: {str(e)}")
+                        post_hoc_results = {
+                            'test': 'Pairwise comparison',
+                            'description': 'Error during post-hoc analysis',
+                            'error': str(e)
+                        }
                     
             except Exception as e:
                 return {"error": f"ANOVA failed: {str(e)}"}
@@ -1418,9 +1432,20 @@ class HexoskinWavLoader:
                 
                 # Post-hoc tests
                 if p_value < 0.05:
-                    post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
-                        data_values, data_names, 'welch_anova', alpha=0.05
-                    )
+                    try:
+                        post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
+                            data_values, data_names, 'welch_anova', alpha=0.05
+                        )
+                        # If post-hoc calculation failed, log the error but don't stop the entire analysis
+                        if 'error' in post_hoc_results:
+                            print(f"Post-hoc calculation error: {post_hoc_results['error']}")
+                    except Exception as e:
+                        print(f"Error during post-hoc test calculation: {str(e)}")
+                        post_hoc_results = {
+                            'test': 'Pairwise comparison',
+                            'description': 'Error during post-hoc analysis',
+                            'error': str(e)
+                        }
                     
             except Exception as e:
                 return {"error": f"Welch's ANOVA failed: {str(e)}"}
@@ -1440,9 +1465,20 @@ class HexoskinWavLoader:
                 
                 # Post-hoc tests
                 if p_value < 0.05:
-                    post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
-                        data_values, data_names, 'kruskal', alpha=0.05
-                    )
+                    try:
+                        post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
+                            data_values, data_names, 'kruskal', alpha=0.05
+                        )
+                        # If post-hoc calculation failed, log the error but don't stop the entire analysis
+                        if 'error' in post_hoc_results:
+                            print(f"Post-hoc calculation error: {post_hoc_results['error']}")
+                    except Exception as e:
+                        print(f"Error during post-hoc test calculation: {str(e)}")
+                        post_hoc_results = {
+                            'test': 'Pairwise comparison',
+                            'description': 'Error during post-hoc analysis',
+                            'error': str(e)
+                        }
                     
             except Exception as e:
                 return {"error": f"Kruskal-Wallis test failed: {str(e)}"}
@@ -1474,9 +1510,20 @@ class HexoskinWavLoader:
                 
                 # Post-hoc tests
                 if p_value < 0.05:
-                    post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
-                        data_values, data_names, 'friedman', alpha=0.05, n_blocks=n
-                    )
+                    try:
+                        post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
+                            data_values, data_names, 'friedman', alpha=0.05, n_blocks=n
+                        )
+                        # If post-hoc calculation failed, log the error but don't stop the entire analysis
+                        if 'error' in post_hoc_results:
+                            print(f"Post-hoc calculation error: {post_hoc_results['error']}")
+                    except Exception as e:
+                        print(f"Error during post-hoc test calculation: {str(e)}")
+                        post_hoc_results = {
+                            'test': 'Pairwise comparison',
+                            'description': 'Error during post-hoc analysis',
+                            'error': str(e)
+                        }
                     
             except Exception as e:
                 return {"error": f"Friedman test failed: {str(e)}"}
@@ -1543,9 +1590,20 @@ class HexoskinWavLoader:
                 
                 # Post-hoc tests
                 if p_value < 0.05:
-                    post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
-                        data_values, data_names, 'rm_anova', alpha=0.05
-                    )
+                    try:
+                        post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
+                            data_values, data_names, 'rm_anova', alpha=0.05
+                        )
+                        # If post-hoc calculation failed, log the error but don't stop the entire analysis
+                        if 'error' in post_hoc_results:
+                            print(f"Post-hoc calculation error: {post_hoc_results['error']}")
+                    except Exception as e:
+                        print(f"Error during post-hoc test calculation: {str(e)}")
+                        post_hoc_results = {
+                            'test': 'Pairwise comparison',
+                            'description': 'Error during post-hoc analysis',
+                            'error': str(e)
+                        }
                     
             except Exception as e:
                 return {"error": f"Repeated measures ANOVA failed: {str(e)}"}
@@ -1623,9 +1681,20 @@ class HexoskinWavLoader:
                 
                 # Post-hoc tests
                 if p_value < 0.05:
-                    post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
-                        data_values, data_names, 'aligned_ranks', alpha=0.05
-                    )
+                    try:
+                        post_hoc_results = HexoskinWavLoader._run_posthoc_tests(
+                            data_values, data_names, 'aligned_ranks', alpha=0.05
+                        )
+                        # If post-hoc calculation failed, log the error but don't stop the entire analysis
+                        if 'error' in post_hoc_results:
+                            print(f"Post-hoc calculation error: {post_hoc_results['error']}")
+                    except Exception as e:
+                        print(f"Error during post-hoc test calculation: {str(e)}")
+                        post_hoc_results = {
+                            'test': 'Pairwise comparison',
+                            'description': 'Error during post-hoc analysis',
+                            'error': str(e)
+                        }
                     
             except Exception as e:
                 return {"error": f"Aligned Ranks Transform ANOVA failed: {str(e)}"}
@@ -2877,6 +2946,10 @@ class HexoskinWavApp(tk.Tk):
             index = selection[0]
             file_info = self.loaded_files[index]
             
+            # Store the selected item and file info explicitly
+            self.selected_item = selection[0]
+            self.selected_file_info = file_info
+            
             # Update metadata display
             metadata = file_info['loader'].get_metadata()
             metadata_str = '\n'.join([f"{k}: {v}" for k, v in metadata.items()])
@@ -3702,132 +3775,22 @@ class HexoskinWavApp(tk.Tk):
                     self.comparison_text.insert(tk.END, "-" * 50 + "\n")
                 
                     # Display test information
-                    self.comparison_text.insert(tk.END, f"Test: {post_hoc['test']}\n", "subsection")
-                    self.comparison_text.insert(tk.END, f"Description: {post_hoc['description']}\n\n")
+                    self.comparison_text.insert(tk.END, f"Test: {post_hoc.get('test', 'Pairwise comparison')}\n", "subsection")
+                    self.comparison_text.insert(tk.END, f"Description: {post_hoc.get('description', 'Detailed analysis of group differences')}\n\n")
                     
                     # Display pairwise comparisons in a table format
-                    if 'pairwise_p_values' in post_hoc:
-                        self.comparison_text.insert(tk.END, "Pairwise Comparisons:\n", "subsection")
-                        
-                        # Calculate column widths for table
-                        group_width = max(15, max(len(pair['group1']) for pair in post_hoc['pairwise_p_values']))
-                        group_width = max(group_width, max(len(pair['group2']) for pair in post_hoc['pairwise_p_values']))
-                        
-                        # Create header
-                        header = f"{'Group 1':{group_width}} {'Group 2':{group_width}} {'p-value':10} {'Adj. p-value':12} {'Effect Size':12} {'Significant':10}\n"
-                        self.comparison_text.insert(tk.END, header, "subsection")
-                        self.comparison_text.insert(tk.END, "-" * (group_width * 2 + 44) + "\n")
-                        
-                        # Add rows
-                        for pair in post_hoc['pairwise_p_values']:
-                            p_val = pair['p_value']
-                            p_adj = pair.get('p_value_adjusted', p_val)  # Use original p-value if no adjustment
-                            effect = pair.get('effect_size', '')
-                            
-                            # Apply APA style formatting for p-values
-                            if p_val < 0.001:
-                                p_val_str = "< .001"
-                            else:
-                                p_val_str = f"{p_val:.3f}".lstrip('0')
-                                
-                            if p_adj < 0.001:
-                                p_adj_str = "< .001"
-                            else:
-                                p_adj_str = f"{p_adj:.3f}".lstrip('0')
-                            
-                            # Highlight significant results
-                            is_significant = pair.get('significant', False)
-                            
-                            row = (f"{pair['group1']:{group_width}} "
-                                  f"{pair['group2']:{group_width}} "
-                                  f"{p_val_str:>10} "
-                                  f"{p_adj_str:>12} ")
-                                  
-                            if isinstance(effect, (int, float)):
-                                row += f"{effect:12.4f} "
-                            else:
-                                row += f"{'N/A':>12} "
-                                
-                            row += f"{'Yes' if is_significant else 'No':10}\n"
-                            
-                            # Insert with highlighting for significant results
-                            if is_significant:
-                                self.comparison_text.insert(tk.END, row, "important")
-                            else:
-                                self.comparison_text.insert(tk.END, row)
-                        
-                        self.comparison_text.insert(tk.END, "\n")
-                        
-                        # Display FDR results if available
-                        if 'fdr_significant_pairs' in post_hoc:
-                            self.comparison_text.insert(tk.END, "FDR-Corrected Results:\n", "subsection")
-                            self.comparison_text.insert(tk.END, f"Number of significant pairs after FDR correction: {len(post_hoc['fdr_significant_pairs'])}\n\n")
-                    
-                    # Display multiple testing correction information
-                    if 'multiple_testing_correction' in post_hoc:
-                        mtc = post_hoc['multiple_testing_correction']
-                        self.comparison_text.insert(tk.END, "Multiple Testing Correction:\n", "subsection")
-                        self.comparison_text.insert(tk.END, f"Method: {mtc['method']}\n")
-                        self.comparison_text.insert(tk.END, f"Description: {mtc['description']}\n")
-                        if 'fdr_method' in mtc:
-                            self.comparison_text.insert(tk.END, f"Additional correction: {mtc['fdr_method']} ({mtc['fdr_description']})\n")
-                        self.comparison_text.insert(tk.END, "\n")
-                    
-                    # Display effect size interpretation if available
-                    if any('effect_size' in pair for pair in post_hoc.get('pairwise_p_values', [])):
-                        self.comparison_text.insert(tk.END, "Effect Size Interpretation:\n", "subsection")
-                        
-                        for pair in post_hoc['pairwise_p_values']:
-                            if 'effect_size' in pair and 'effect_size_type' in pair:
-                                # Get effect size interpretation
-                                effect_size = pair.get('effect_size', 0)
-                                effect_type = pair.get('effect_size_type', '')
-                                
-                                # Standard interpretation based on effect size type
-                                interpretation = ""
-                                effect_size = abs(pair['effect_size'])
-                                interpretation = ""
-                                if pair['effect_size_type'] == "Cohen's d" or pair['effect_size_type'] == "Hedges' g":
-                                    if effect_size < 0.2:
-                                        interpretation = "negligible effect"
-                                    elif effect_size < 0.5:
-                                        interpretation = "small effect"
-                                    elif effect_size < 0.8:
-                                        interpretation = "medium effect"
-                                    else:
-                                        interpretation = "large effect"
-                                elif 'correlation' in pair['effect_size_type'].lower():
-                                    if effect_size < 0.1:
-                                        interpretation = "negligible effect"
-                                    elif effect_size < 0.3:
-                                        interpretation = "small effect"
-                                    elif effect_size < 0.5:
-                                        interpretation = "medium effect"
-                                    else:
-                                        interpretation = "large effect"
-                                
-                                if interpretation:
-                                    self.comparison_text.insert(tk.END, 
-                                        f"{pair['group1']} vs {pair['group2']}: {pair['effect_size_type']} = {pair['effect_size']:.4f} ({interpretation})\n")
-                        
-                        self.comparison_text.insert(tk.END, "\n")
+                    if 'pairwise_p_values' in post_hoc and post_hoc['pairwise_p_values']:
+                        self._display_pairwise_results(post_hoc)
+                    else:
+                        self.comparison_text.insert(tk.END, "No significant pairwise differences found.\n")
                 else:
-                    self.comparison_text.insert(tk.END, "\nPOST-HOC ANALYSIS\n")
+                    # Test was significant but no post-hoc results were generated
+                    self.comparison_text.insert(tk.END, "\nPOST-HOC ANALYSIS\n", "section")
                     self.comparison_text.insert(tk.END, "-" * 50 + "\n")
-                    if 'post_hoc_results' not in result:
-                        self.comparison_text.insert(tk.END, "Post-hoc analysis was not performed. This might be due to:\n")
-                        self.comparison_text.insert(tk.END, "1. The test type does not support post-hoc analysis\n")
-                        self.comparison_text.insert(tk.END, "2. An error occurred during post-hoc analysis\n")
-                    elif not result['post_hoc_results']:
-                        self.comparison_text.insert(tk.END, "Post-hoc analysis was attempted but returned no results. This might be due to:\n")
-                        self.comparison_text.insert(tk.END, "1. Insufficient data for pairwise comparisons\n")
-                        self.comparison_text.insert(tk.END, "2. No significant pairwise differences were found\n")
-                    self.comparison_text.insert(tk.END, "\nConsider checking the data or using a different test type if post-hoc analysis is needed.\n\n")
+                    self.comparison_text.insert(tk.END, "Post-hoc analysis was not performed for this test type or configuration.\n")
             else:
-                self.comparison_text.insert(tk.END, "\nPOST-HOC ANALYSIS\n")
-                self.comparison_text.insert(tk.END, "-" * 50 + "\n")
-                self.comparison_text.insert(tk.END, "Post-hoc analysis was not performed because the main test did not show significant differences.\n")
-                self.comparison_text.insert(tk.END, "Post-hoc tests are only meaningful when the main test indicates significant differences between groups.\n\n")
+                # When the main test is not significant, we shouldn't see post-hoc analysis
+                self.comparison_text.insert(tk.END, "\nNOTE: Post-hoc analysis is not performed when the main test is not significant.\n")
             
             # Recommendations
             self.comparison_text.insert(tk.END, "\nRECOMMENDATIONS\n")
@@ -3949,12 +3912,23 @@ class HexoskinWavApp(tk.Tk):
             
     def _save_to_csv(self):
         """Save the currently selected data to a CSV file"""
-        if not self.selected_item or not self.selected_file_info:
+        # Check for selection using listbox directly since selected_item might not be set
+        selection = self.files_listbox.curselection()
+        
+        if not selection:
             messagebox.showinfo("Information", "Please select a file to save")
             return
             
+        # Get the selected file info
+        selected_index = selection[0]
+        file_info = self.loaded_files[selected_index]
+        
+        # Set these for other methods that might need them
+        self.selected_item = selected_index
+        self.selected_file_info = file_info
+            
         # Get the selected loader
-        loader = self.selected_file_info.get('loader')
+        loader = file_info.get('loader')
         if not loader or not hasattr(loader, 'get_data'):
             messagebox.showerror("Error", "Selected file data is not available")
             return
@@ -4065,12 +4039,23 @@ class HexoskinWavApp(tk.Tk):
             
     def _resample_data(self):
         """Resample the selected signal to a different sampling rate"""
-        if not self.selected_item or not self.selected_file_info:
+        # Check for selection using listbox directly since selected_item might not be set
+        selection = self.files_listbox.curselection()
+        
+        if not selection:
             messagebox.showinfo("Information", "Please select a file to resample")
             return
             
+        # Get the selected file info
+        selected_index = selection[0]
+        file_info = self.loaded_files[selected_index]
+        
+        # Set these for other methods that might need them
+        self.selected_item = selected_index
+        self.selected_file_info = file_info
+            
         # Get the selected loader
-        loader = self.selected_file_info.get('loader')
+        loader = file_info.get('loader')
         if not loader or not hasattr(loader, 'get_data'):
             messagebox.showerror("Error", "Selected file data is not available")
             return
@@ -4678,28 +4663,116 @@ This dataset {'demonstrates characteristics consistent with a normal distributio
             self.comparison_text.insert(tk.END, "-" * 50 + "\n")
             self.comparison_text.insert(tk.END, f"{comparison_results['interpretation']}\n\n")
             
-            # Post-hoc results if available
-            if comparison_results.get('post_hoc_results'):
+            # Display post-hoc analysis if available (removing the 'reject_null' condition check as post-hoc analysis
+            # should already be conditionally generated only when significant differences are found)
+            if 'post_hoc_results' in comparison_results and comparison_results['post_hoc_results']:
                 post_hoc = comparison_results['post_hoc_results']
-                self.comparison_text.insert(tk.END, "POST-HOC ANALYSIS\n")
+                
+                self.comparison_text.insert(tk.END, "POST-HOC ANALYSIS\n", "section")
                 self.comparison_text.insert(tk.END, "-" * 50 + "\n")
                 
-                if 'pairwise_p_values' in post_hoc:
-                    for pair in post_hoc['pairwise_p_values']:
-                        self.comparison_text.insert(tk.END, 
-                            f"{pair['group1']} vs {pair['group2']}: p = {pair['p_value']:.4f} "
-                            f"({'significant' if pair['significant'] else 'not significant'})\n"
-                        )
+                # Display test information
+                self.comparison_text.insert(tk.END, f"Test: {post_hoc.get('test', 'Pairwise comparison')}\n", "subsection")
+                self.comparison_text.insert(tk.END, f"Description: {post_hoc.get('description', 'Detailed analysis of group differences')}\n\n")
                 
-                self.comparison_text.insert(tk.END, "\n")
-            
-            # Store results for potential export
-            self.last_comparison_results = comparison_results
+                if 'pairwise_p_values' in post_hoc and post_hoc['pairwise_p_values']:
+                    self._display_pairwise_results(post_hoc)
+                else:
+                    self.comparison_text.insert(tk.END, "No significant pairwise differences found.\n")
+            elif comparison_results.get('reject_null', False):
+                # This means the test was significant but no post-hoc results were generated
+                self.comparison_text.insert(tk.END, "POST-HOC ANALYSIS\n", "section")
+                self.comparison_text.insert(tk.END, "-" * 50 + "\n")
+                self.comparison_text.insert(tk.END, "Post-hoc analysis was not performed for this test type or configuration.\n")
+                
+            # Show the results
+            self.comparison_frame.update_idletasks()
             
         except Exception as e:
-            self.comparison_text.delete(1.0, tk.END)
-            self.comparison_text.insert(tk.END, f"Error performing comparison: {str(e)}\n")
+            messagebox.showerror("Error", f"Failed to run comparison: {str(e)}")
+            import traceback
             traceback.print_exc()
+
+    def _display_pairwise_results(self, post_hoc):
+        """Helper method to display pairwise post-hoc results"""
+        # Ensure we have pairwise results to display
+        if 'pairwise_p_values' not in post_hoc or not post_hoc['pairwise_p_values']:
+            self.comparison_text.insert(tk.END, "No significant pairwise differences found.\n")
+            return
+            
+        self.comparison_text.insert(tk.END, "Pairwise Comparisons:\n", "subsection")
+        
+        # Calculate column widths for table
+        try:
+            group_width = max(15, max(len(str(pair.get('group1', ''))) for pair in post_hoc['pairwise_p_values']))
+            group_width = max(group_width, max(len(str(pair.get('group2', ''))) for pair in post_hoc['pairwise_p_values']))
+        except (ValueError, KeyError, TypeError):
+            # Fallback if there's an issue with the data
+            group_width = 15
+        
+        # Create header
+        header = f"{'Group 1':{group_width}} {'Group 2':{group_width}} {'p-value':10} {'Adj. p-value':12} {'Effect Size':12} {'Significant':10}\n"
+        self.comparison_text.insert(tk.END, header, "subsection")
+        self.comparison_text.insert(tk.END, "-" * (group_width * 2 + 44) + "\n")
+        
+        # Add rows
+        for pair in post_hoc['pairwise_p_values']:
+            try:
+                p_val = pair.get('p_value', 1.0)
+                p_adj = pair.get('p_value_adjusted', p_val)  # Use original p-value if no adjustment
+                effect = pair.get('effect_size', '')
+                
+                # Apply APA style formatting for p-values
+                if p_val < 0.001:
+                    p_val_str = "< .001"
+                else:
+                    p_val_str = f"{p_val:.3f}".lstrip('0')
+                    
+                if p_adj < 0.001:
+                    p_adj_str = "< .001"
+                else:
+                    p_adj_str = f"{p_adj:.3f}".lstrip('0')
+                
+                # Highlight significant results
+                is_significant = pair.get('significant', False)
+                
+                row = (f"{str(pair.get('group1', '')):{group_width}} "
+                      f"{str(pair.get('group2', '')):{group_width}} "
+                      f"{p_val_str:>10} "
+                      f"{p_adj_str:>12} ")
+                      
+                if isinstance(effect, (int, float)):
+                    row += f"{effect:12.4f} "
+                else:
+                    row += f"{'N/A':>12} "
+                    
+                row += f"{'Yes' if is_significant else 'No':10}\n"
+                
+                # Insert with highlighting for significant results
+                if is_significant:
+                    self.comparison_text.insert(tk.END, row, "important")
+                else:
+                    self.comparison_text.insert(tk.END, row)
+            except Exception as e:
+                # Handle any errors in displaying this row
+                self.comparison_text.insert(tk.END, f"Error displaying result: {str(e)}\n")
+        
+        self.comparison_text.insert(tk.END, "\n")
+        
+        # Display FDR results if available
+        if 'fdr_significant_pairs' in post_hoc:
+            self.comparison_text.insert(tk.END, "FDR-Corrected Results:\n", "subsection")
+            self.comparison_text.insert(tk.END, f"Number of significant pairs after FDR correction: {len(post_hoc['fdr_significant_pairs'])}\n\n")
+        
+        # Display multiple testing correction information
+        if 'multiple_testing_correction' in post_hoc:
+            mtc = post_hoc['multiple_testing_correction']
+            self.comparison_text.insert(tk.END, "Multiple Testing Correction:\n", "subsection")
+            self.comparison_text.insert(tk.END, f"Method: {mtc.get('method', 'Bonferroni')}\n")
+            self.comparison_text.insert(tk.END, f"Description: {mtc.get('description', 'Controls family-wise error rate')}\n")
+            if 'fdr_method' in mtc:
+                self.comparison_text.insert(tk.END, f"Additional correction: {mtc['fdr_method']} ({mtc['fdr_description']})\n")
+            self.comparison_text.insert(tk.END, "\n")
 
     def _suggest_test(self):
         """Suggest appropriate statistical test based on data characteristics"""
