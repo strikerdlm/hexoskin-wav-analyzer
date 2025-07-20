@@ -17,6 +17,11 @@ import warnings
 import platform
 import csv
 from datetime import datetime, timedelta
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class HexoskinWavLoader:
     """
@@ -35,10 +40,71 @@ class HexoskinWavLoader:
         self.file_path = None
         self.metadata = {}
         self.start_timestamp = None
+        self.max_memory_mb = 500  # Maximum memory usage in MB
         
+    def _validate_wav_file(self, file_path):
+        """
+        Validate if the file is a proper WAV file and get basic information.
+        
+        Args:
+            file_path (str): Path to the WAV file
+            
+        Returns:
+            dict: WAV file information or None if invalid
+        """
+        try:
+            with wave.open(file_path, 'rb') as wav_file:
+                sample_rate = wav_file.getframerate()
+                n_frames = wav_file.getnframes()
+                
+                wav_info = {
+                    'sample_rate': sample_rate,
+                    'n_channels': wav_file.getnchannels(),
+                    'sample_width': wav_file.getsampwidth(),
+                    'n_frames': n_frames,
+                    'duration': n_frames / sample_rate if sample_rate and sample_rate > 0 else 0
+                }
+                
+                # Validate basic WAV properties
+                if wav_info['sample_rate'] <= 0:
+                    raise ValueError("Invalid sample rate")
+                if wav_info['n_channels'] <= 0:
+                    raise ValueError("Invalid number of channels")
+                if wav_info['sample_width'] <= 0:
+                    raise ValueError("Invalid sample width")
+                if wav_info['n_frames'] <= 0:
+                    raise ValueError("Invalid number of frames")
+                    
+                return wav_info
+        except wave.Error as e:
+            logger.error(f"WAV file error: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error validating WAV file: {e}")
+            return None
+    
+    def _estimate_memory_usage(self, n_frames, sample_width):
+        """
+        Estimate memory usage for loading the WAV file.
+        
+        Args:
+            n_frames (int): Number of frames in the file
+            sample_width (int): Sample width in bytes
+            
+        Returns:
+            float: Estimated memory usage in MB
+        """
+        # Memory for raw data + processed data (timestamps + values) + pandas DataFrame
+        raw_size = n_frames * sample_width
+        processed_size = n_frames * 8 * 2  # 2 float64 arrays (timestamps, values)
+        dataframe_size = processed_size * 1.5  # DataFrame overhead
+        
+        total_mb = (raw_size + processed_size + dataframe_size) / (1024 * 1024)
+        return total_mb
+    
     def load_wav_file(self, file_path):
         """
-        Load a Hexoskin WAV file using the struct module to unpack binary data.
+        Load a Hexoskin WAV file with improved error handling and memory management.
         
         Args:
             file_path (str): Path to the WAV file
@@ -47,32 +113,88 @@ class HexoskinWavLoader:
             bool: True if successful, False otherwise
         """
         try:
+            # Validate file exists
+            if not os.path.exists(file_path):
+                logger.error(f"File does not exist: {file_path}")
+                return False
+                
+            # Validate WAV file format
+            wav_info = self._validate_wav_file(file_path)
+            if wav_info is None:
+                logger.error(f"Invalid WAV file format: {file_path}")
+                return False
+            
+            # Check memory requirements
+            estimated_memory = self._estimate_memory_usage(wav_info['n_frames'], wav_info['sample_width'])
+            if estimated_memory > self.max_memory_mb:
+                logger.warning(f"Large file detected ({estimated_memory:.1f} MB). Consider using chunked processing.")
+                # For very large files, we could implement chunked processing here
+                
             self.file_path = file_path
             
             # Get filename without extension for metadata
             self.metadata['sensor_name'] = os.path.splitext(os.path.basename(file_path))[0]
+            self.metadata.update(wav_info)
+            
+            # Extract sample rate for later use
+            self.sample_rate = wav_info['sample_rate']
             
             # Try to load info.json for timestamp information
             self._load_info_json()
             
-            # Open the WAV file to get sample rate
-            with wave.open(file_path, 'rb') as wav_file:
-                self.sample_rate = wav_file.getframerate()
-                n_channels = wav_file.getnchannels()
-                sample_width = wav_file.getsampwidth()
-                n_frames = wav_file.getnframes()
-                
-                self.metadata['sample_rate'] = self.sample_rate
-                self.metadata['n_channels'] = n_channels
-                self.metadata['sample_width'] = sample_width
-                self.metadata['n_frames'] = n_frames
-                
-                print(f"Sample rate: {self.sample_rate} Hz")
-                print(f"Channels: {n_channels}")
-                print(f"Sample width: {sample_width} bytes")
-                print(f"Number of frames: {n_frames}")
+            logger.info(f"Loading WAV file: {file_path}")
+            logger.info(f"Sample rate: {self.sample_rate} Hz, Duration: {wav_info['duration']:.2f}s")
             
-            # Using struct to unpack binary data
+            # Load data with appropriate format handling
+            success = self._load_wav_data(file_path, wav_info)
+            
+            if success:
+                # Create DataFrame with loaded data
+                self.data = pd.DataFrame({
+                    'timestamp': self.timestamps,
+                    'value': self.values
+                })
+                
+                # Add absolute timestamps if available
+                if self.start_timestamp is not None:
+                    self.data['abs_timestamp'] = self.start_timestamp + self.data['timestamp']
+                    self.data['datetime'] = pd.to_datetime(self.data['abs_timestamp'], unit='s')
+                
+                logger.info(f"Successfully loaded {len(self.data)} data points")
+                return True
+            else:
+                return False
+                
+        except MemoryError:
+            logger.error(f"Insufficient memory to load file: {file_path}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error loading WAV file: {e}")
+            return False
+    
+    def _load_wav_data(self, file_path, wav_info):
+        """
+        Load WAV data with proper format handling.
+        
+        Args:
+            file_path (str): Path to the WAV file
+            wav_info (dict): WAV file information
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Determine appropriate format based on sample width
+            if wav_info['sample_width'] == 1:
+                format_char = 'B'  # unsigned byte
+            elif wav_info['sample_width'] == 2:
+                format_char = 'h'  # signed short
+            elif wav_info['sample_width'] == 4:
+                format_char = 'i'  # signed int
+            else:
+                logger.warning(f"Unusual sample width: {wav_info['sample_width']}, using 'h' format")
+                format_char = 'h'
+            
             timestamps = []
             values = []
             
@@ -80,50 +202,73 @@ class HexoskinWavLoader:
                 # Skip WAV header (44 bytes)
                 f.seek(44)
                 
-                # For synchronous data, Hexoskin uses 'h' (short) format 
-                data_format = struct.Struct("h")
-                
-                # Read data
-                byte_data = f.read(data_format.size)
+                data_format = struct.Struct(format_char)
                 frame_count = 0
                 
-                while byte_data:
-                    # Extract value
-                    value = data_format.unpack(byte_data)[0]
+                # Read in chunks for better memory management
+                chunk_size = 8192  # Read 8KB chunks
+                
+                while frame_count < wav_info['n_frames']:
+                    chunk_data = f.read(chunk_size)
+                    if not chunk_data:
+                        break
                     
-                    # Calculate timestamp based on sample rate and frame count
-                    timestamp = frame_count / self.sample_rate
+                    # Process chunk
+                    chunk_frames = len(chunk_data) // data_format.size
                     
-                    timestamps.append(timestamp)
-                    values.append(value)
-                    
-                    # Read next frame
-                    byte_data = f.read(data_format.size)
-                    frame_count += 1
+                    for i in range(chunk_frames):
+                        if frame_count >= wav_info['n_frames']:
+                            break
+                            
+                        try:
+                            # Extract value from chunk
+                            start_pos = i * data_format.size
+                            value_bytes = chunk_data[start_pos:start_pos + data_format.size]
+                            
+                            if len(value_bytes) == data_format.size:
+                                value = data_format.unpack(value_bytes)[0]
+                                
+                                # Calculate timestamp based on sample rate and frame count
+                                timestamp = frame_count / self.sample_rate
+                                
+                                timestamps.append(timestamp)
+                                values.append(value)
+                                
+                                frame_count += 1
+                            else:
+                                break
+                        except struct.error as e:
+                            logger.warning(f"Struct unpack error at frame {frame_count}: {e}")
+                            break
             
+            # Convert to numpy arrays
             self.timestamps = np.array(timestamps)
-            self.values = np.array(values)
+            self.values = np.array(values, dtype=np.float64)
             
-            # Create basic DataFrame with relative timestamps
-            self.data = pd.DataFrame({
-                'timestamp': self.timestamps,
-                'value': self.values
-            })
+            # Basic data validation
+            if len(self.timestamps) == 0:
+                logger.error("No data points loaded")
+                return False
+                
+            # Check for reasonable data ranges
+            if np.any(np.isnan(self.values)) or np.any(np.isinf(self.values)):
+                logger.warning("Data contains NaN or infinite values")
+                # Remove invalid values
+                valid_mask = np.isfinite(self.values)
+                self.timestamps = self.timestamps[valid_mask]
+                self.values = self.values[valid_mask]
             
-            # Add absolute timestamps if available
-            if self.start_timestamp is not None:
-                self.data['abs_timestamp'] = self.start_timestamp + self.data['timestamp']
-                self.data['datetime'] = pd.to_datetime(self.data['abs_timestamp'], unit='s')
-            
-            print(f"Loaded {len(self.data)} data points")
             return True
             
+        except IOError as e:
+            logger.error(f"IO error reading WAV file: {e}")
+            return False
         except Exception as e:
-            print(f"Error loading WAV file: {e}")
+            logger.error(f"Error loading WAV data: {e}")
             return False
     
     def _load_info_json(self):
-        """Load info.json file to get timestamp information"""
+        """Load info.json file to get timestamp information with improved error handling"""
         try:
             # Get directory of the WAV file
             dir_path = os.path.dirname(self.file_path)
@@ -132,13 +277,17 @@ class HexoskinWavLoader:
             info_path = os.path.join(dir_path, 'info.json')
             
             if os.path.exists(info_path):
-                with open(info_path, 'r') as f:
+                with open(info_path, 'r', encoding='utf-8') as f:
                     info_data = json.load(f)
                 
-                # Extract timestamp information
+                # Extract timestamp information with validation
                 if 'timestamp' in info_data:
-                    self.start_timestamp = info_data['timestamp']
-                    self.metadata['start_timestamp'] = self.start_timestamp
+                    timestamp = info_data['timestamp']
+                    if isinstance(timestamp, (int, float)) and timestamp > 0:
+                        self.start_timestamp = timestamp
+                        self.metadata['start_timestamp'] = timestamp
+                    else:
+                        logger.warning(f"Invalid timestamp in info.json: {timestamp}")
                 
                 if 'start_date' in info_data:
                     self.metadata['start_date'] = info_data['start_date']
@@ -148,13 +297,21 @@ class HexoskinWavLoader:
                     self.metadata['user_id'] = info_data['user']
                 
                 if 'devices' in info_data:
-                    self.metadata['devices'] = ', '.join(info_data['devices'])
+                    if isinstance(info_data['devices'], list):
+                        self.metadata['devices'] = ', '.join(str(d) for d in info_data['devices'])
+                    else:
+                        self.metadata['devices'] = str(info_data['devices'])
                 
-                print(f"Loaded timestamp data from info.json: {self.start_timestamp}")
+                logger.info(f"Loaded timestamp data from info.json: {self.start_timestamp}")
             else:
-                print("No info.json found, using relative timestamps")
+                logger.info("No info.json found, using relative timestamps")
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in info.json: {e}")
+        except IOError as e:
+            logger.error(f"IO error reading info.json: {e}")
         except Exception as e:
-            print(f"Error loading info.json: {e}")
+            logger.error(f"Unexpected error loading info.json: {e}")
     
     def get_metadata(self):
         """Return metadata about the loaded file"""
@@ -931,77 +1088,145 @@ class HexoskinWavLoader:
     
     def resample_data(self, target_hz):
         """
-        Resample the data to a new frequency
+        Resample the data to a new frequency with improved validation and error handling
         
         Args:
-            target_hz (int): Target frequency in Hz
+            target_hz (int or float): Target frequency in Hz
         """
         if self.data is None:
-            print("No data loaded")
+            logger.error("No data loaded")
             return
-        
-        # Calculate number of samples for resampling
-        n_samples = int(len(self.timestamps) * target_hz / self.sample_rate)
-        
-        # Resample using scipy's resample function
-        resampled_values = signal.resample(self.values, n_samples)
-        
-        # Create new timestamp array
-        new_duration = self.timestamps[-1]  # Same duration as original
-        resampled_timestamps = np.linspace(0, new_duration, n_samples)
-        
-        # Update data
-        self.data = pd.DataFrame({
-            'timestamp': resampled_timestamps,
-            'value': resampled_values
-        })
-        
-        print(f"Resampled data from {self.sample_rate}Hz to {target_hz}Hz")
+            
+        # Validate input parameters
+        if not isinstance(target_hz, (int, float)):
+            logger.error("target_hz must be a number")
+            return
+            
+        if target_hz <= 0:
+            logger.error("target_hz must be positive")
+            return
+            
+        if len(self.timestamps) == 0:
+            logger.error("No data points to resample")
+            return
+            
+        try:
+            # Validate sample rate
+            if self.sample_rate is None or self.sample_rate <= 0:
+                logger.error("Invalid sample rate for resampling")
+                return
+                
+            # Calculate number of samples for resampling
+            n_samples = int(len(self.timestamps) * target_hz / self.sample_rate)
+            
+            if n_samples <= 0:
+                logger.error("Calculated sample count is zero or negative")
+                return
+            
+            # Resample using scipy's resample function
+            resampled_values = signal.resample(self.values, n_samples)
+            
+            # Create new timestamp array
+            new_duration = self.timestamps[-1]  # Same duration as original
+            resampled_timestamps = np.linspace(0, new_duration, n_samples)
+            
+            # Update data
+            self.data = pd.DataFrame({
+                'timestamp': resampled_timestamps,
+                'value': resampled_values
+            })
+            
+            # Update timestamps and values arrays
+            self.timestamps = resampled_timestamps
+            self.values = resampled_values
+            
+            # Update sample rate
+            self.sample_rate = target_hz
+            self.metadata['sample_rate'] = target_hz
+            
+            logger.info(f"Resampled data from {self.sample_rate}Hz to {target_hz}Hz")
+            
+        except Exception as e:
+            logger.error(f"Error resampling data: {e}")
         
     def filter_data(self, lowcut=None, highcut=None, order=5):
         """
-        Apply a bandpass filter to the data
+        Apply a bandpass filter to the data with improved validation and error handling
         
         Args:
-            lowcut (float): Low cutoff frequency
-            highcut (float): High cutoff frequency
-            order (int): Filter order
+            lowcut (float, optional): Low cutoff frequency in Hz
+            highcut (float, optional): High cutoff frequency in Hz
+            order (int): Filter order (default: 5)
         """
         if self.data is None:
-            print("No data loaded")
+            logger.error("No data loaded")
             return
-        
-        nyquist = 0.5 * self.sample_rate
-        
-        if lowcut and highcut:
-            # Bandpass filter
-            low = lowcut / nyquist
-            high = highcut / nyquist
-            b, a = signal.butter(order, [low, high], btype='band')
-        elif lowcut:
-            # Highpass filter
-            low = lowcut / nyquist
-            b, a = signal.butter(order, low, btype='high')
-        elif highcut:
-            # Lowpass filter
-            high = highcut / nyquist
-            b, a = signal.butter(order, high, btype='low')
-        else:
-            print("No filter parameters specified")
+            
+        # Validate sample rate
+        if self.sample_rate is None or self.sample_rate <= 0:
+            logger.error("Invalid sample rate for filtering")
             return
-        
-        # Apply filter
-        filtered_values = signal.filtfilt(b, a, self.values)
-        
-        # Update data
-        self.data['value'] = filtered_values
-        
-        if lowcut and highcut:
-            print(f"Applied bandpass filter ({lowcut}-{highcut} Hz)")
-        elif lowcut:
-            print(f"Applied highpass filter ({lowcut} Hz)")
-        elif highcut:
-            print(f"Applied lowpass filter ({highcut} Hz)")
+            
+        # Validate filter parameters
+        if lowcut is not None and (not isinstance(lowcut, (int, float)) or lowcut <= 0):
+            logger.error("lowcut must be a positive number")
+            return
+            
+        if highcut is not None and (not isinstance(highcut, (int, float)) or highcut <= 0):
+            logger.error("highcut must be a positive number")
+            return
+            
+        if not isinstance(order, int) or order <= 0:
+            logger.error("order must be a positive integer")
+            return
+            
+        if lowcut is not None and highcut is not None and lowcut >= highcut:
+            logger.error("lowcut must be less than highcut")
+            return
+            
+        try:
+            nyquist = 0.5 * self.sample_rate
+            
+            # Validate frequencies against Nyquist frequency
+            if lowcut is not None and lowcut >= nyquist:
+                logger.error(f"lowcut ({lowcut} Hz) must be less than Nyquist frequency ({nyquist} Hz)")
+                return
+                
+            if highcut is not None and highcut >= nyquist:
+                logger.error(f"highcut ({highcut} Hz) must be less than Nyquist frequency ({nyquist} Hz)")
+                return
+            
+            if lowcut and highcut:
+                # Bandpass filter
+                low = lowcut / nyquist
+                high = highcut / nyquist
+                b, a = signal.butter(order, [low, high], btype='band')
+                filter_type = f"bandpass filter ({lowcut}-{highcut} Hz)"
+            elif lowcut:
+                # Highpass filter
+                low = lowcut / nyquist
+                b, a = signal.butter(order, low, btype='high')
+                filter_type = f"highpass filter ({lowcut} Hz)"
+            elif highcut:
+                # Lowpass filter
+                high = highcut / nyquist
+                b, a = signal.butter(order, high, btype='low')
+                filter_type = f"lowpass filter ({highcut} Hz)"
+            else:
+                logger.error("No filter parameters specified")
+                return
+            
+            # Apply filter
+            filtered_values = signal.filtfilt(b, a, self.values)
+            
+            # Update data
+            self.data['value'] = filtered_values
+            self.values = filtered_values
+            
+            logger.info(f"Applied {filter_type}")
+            
+        except Exception as e:
+            logger.error(f"Error applying filter: {e}")
     
     def plot_data(self, ax=None, **plot_kwargs):
         """
@@ -1180,15 +1405,31 @@ class HexoskinWavLoader:
         }
         
         # Calculate additional effect sizes
-        # Common Language Effect Size (probability of superiority)
-        cles = 0
-        for x in data1:
-            for y in data2:
-                if x > y:
-                    cles += 1
-                elif x == y:
-                    cles += 0.5
-        cles = cles / (len(data1) * len(data2))
+        # Common Language Effect Size (probability of superiority) - optimized version
+        # Using vectorized operations for better performance
+        try:
+            # For large datasets, use sampling to avoid memory issues
+            if len(data1) * len(data2) > 1000000:  # 1 million comparisons
+                sample_size = min(1000, len(data1), len(data2))
+                sample1 = np.random.choice(data1, size=sample_size, replace=False)
+                sample2 = np.random.choice(data2, size=sample_size, replace=False)
+                
+                # Use broadcasting for efficient computation
+                comparison_matrix = sample1[:, np.newaxis] > sample2
+                cles = np.mean(comparison_matrix)
+            else:
+                # Use broadcasting for efficient computation
+                comparison_matrix = data1[:, np.newaxis] > data2
+                cles = np.mean(comparison_matrix)
+                
+        except MemoryError:
+            # Fallback to sampling if memory issues
+            sample_size = min(500, len(data1), len(data2))
+            sample1 = np.random.choice(data1, size=sample_size, replace=False)
+            sample2 = np.random.choice(data2, size=sample_size, replace=False)
+            
+            comparison_matrix = sample1[:, np.newaxis] > sample2
+            cles = np.mean(comparison_matrix)
         
         results['additional_effect_sizes'] = {
             'cles': cles,
