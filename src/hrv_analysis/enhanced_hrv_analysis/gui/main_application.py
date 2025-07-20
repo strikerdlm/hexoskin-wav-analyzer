@@ -135,8 +135,8 @@ class HRVAnalysisApp:
         self.fast_mode = False  # Analyze all subjects by default
         self.max_bootstrap_samples = 50  # Limit bootstrap samples
         
-        # Set default data paths
-        self.data_directory = Path(__file__).parent.parent.parent  # Points to working_folder
+        # Set default data paths - Updated to point to root /Data folder
+        self.data_directory = Path(__file__).parent.parent.parent.parent.parent / "Data"  # Points to root /Data folder
         self.default_db_path = self.data_directory / "merged_data.db"
         self.default_csv_path = self.data_directory
         
