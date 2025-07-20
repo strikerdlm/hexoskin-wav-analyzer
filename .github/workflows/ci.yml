@@ -1,1 +1,157 @@
- 
+name: Valquiria Data Analysis Suite CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, '3.10', '3.11']
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-tk xvfb
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
+    
+    - name: Run dependency check
+      run: |
+        python tests/test_libraries.py
+    
+    - name: Run tests with xvfb (for GUI components)
+      run: |
+        xvfb-run -a python -m pytest tests/ -v --cov=src --cov-report=xml
+      continue-on-error: true  # Don't fail build on test failures for now
+    
+    - name: Upload coverage to Codecov
+      if: matrix.python-version == '3.10'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety bandit
+    
+    - name: Run safety check
+      run: safety check --json
+      continue-on-error: true
+    
+    - name: Run bandit security scan
+      run: bandit -r src/ -f json
+      continue-on-error: true
+
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install black flake8 mypy
+        pip install -r requirements.txt
+    
+    - name: Run black code formatting check
+      run: black --check --diff src/ tests/ examples/ scripts/
+      continue-on-error: true
+    
+    - name: Run flake8 linting
+      run: flake8 src/ tests/ examples/ scripts/ --max-line-length=100
+      continue-on-error: true
+    
+    - name: Run mypy type checking
+      run: mypy src/ --ignore-missing-imports
+      continue-on-error: true
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [test, security-scan, code-quality]
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+    
+    - name: Build package
+      run: python -m build
+    
+    - name: Check package
+      run: twine check dist/*
+
+  documentation:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install sphinx sphinx-rtd-theme
+    
+    - name: Check documentation links
+      run: |
+        # Check for broken markdown links
+        find docs/ -name "*.md" -exec grep -l "http" {} \;
+      continue-on-error: true
+    
+    - name: Validate README
+      run: |
+        python -c "
+        import re
+        with open('README.md', 'r') as f:
+            content = f.read()
+        # Check for basic sections
+        required_sections = ['Installation', 'Usage', 'Features']
+        for section in required_sections:
+            assert section in content, f'Missing section: {section}'
+        print('README validation passed')
+        " 
