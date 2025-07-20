@@ -211,15 +211,24 @@ python test_ml_analysis.py
 ## 🤝 Contributors & Acknowledgments
 
 ### Special Thanks
-- **Centro de Telemedicina de Colombia** - Technical collaboration
-- **Women AeroSTEAM** - Educational partnership
-- **Valquiria Space Analog Simulation Team** - Research collaboration
+
+**Making This Mission Possible:**
+- **Valquiria Crew** - The brave participants who made this research possible through their dedication during the space analog simulation missions
+- **Women AeroSTEAM** - Educational partnership and support for advancing women in aerospace science, technology, engineering, arts, and mathematics
+- **Centro de Telemedicina de Colombia** - Technical collaboration, medical expertise, and telemedicine infrastructure support
+
+**Research Collaboration:**
+- **Valquiria Space Analog Simulation Team** - Mission planning, data collection, and scientific methodology
+- **Colombian Aerospace Force (FAC)** - Mission support and aerospace medicine expertise
+- **DIMAE (Aerospace Medicine Division)** - Clinical oversight and physiological monitoring protocols
 
 ### Technical Contributors
 - Advanced HRV Analysis Architecture
 - Statistical Methods Implementation
 - Machine Learning Integration
 - Performance Optimization
+
+**This research would not have been possible without the courage and commitment of the Valquiria Crew members who participated in the space analog simulation missions, pushing the boundaries of human space exploration research.**
 
 ## 📄 License & Usage
 
