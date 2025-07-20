@@ -52,6 +52,7 @@ class SettingsPanel:
             "async_max_workers": 2,
             "async_timeout_seconds": 300.0,
             "async_enabled": True,
+            "async_allow_background_processing": False,  # New setting
             
             # Database optimization settings
             "db_chunk_size": 50000,
@@ -275,6 +276,11 @@ class SettingsPanel:
         ttk.Label(timeout_frame, text="Task Timeout (seconds):").pack(anchor=tk.W)
         self.setting_vars['async_timeout_seconds'] = tk.DoubleVar(value=self.current_settings['async_timeout_seconds'])
         ttk.Entry(timeout_frame, textvariable=self.setting_vars['async_timeout_seconds'], width=15).pack(anchor=tk.W, pady=2)
+
+        # Background processing
+        self.setting_vars['async_allow_background_processing'] = tk.BooleanVar(value=self.current_settings['async_allow_background_processing'])
+        ttk.Checkbutton(async_frame, text="Allow background processing (experimental)", 
+                       variable=self.setting_vars['async_allow_background_processing']).pack(anchor=tk.W, pady=5)
     
     def _setup_database_settings_tab(self, notebook: ttk.Notebook):
         """Setup database optimization settings tab."""

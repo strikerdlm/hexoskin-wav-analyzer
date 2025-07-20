@@ -82,6 +82,15 @@ class HRVAnalysisApp:
         self.root.title("Enhanced HRV Analysis System - Valquiria Dataset")
         self.root.geometry("1200x800")
         
+        # Track GUI connection for background processing
+        self._gui_active = True
+        self._shutdown_in_progress = False
+        
+        # Setup window event handlers for background processing control
+        self.root.protocol("WM_DELETE_WINDOW", self._on_window_closing)
+        self.root.bind("<FocusIn>", self._on_window_focus)
+        self.root.bind("<FocusOut>", self._on_window_unfocus)
+        
         # Initialize components
         self.data_loader = DataLoader()
         self.signal_processor = SignalProcessor()
@@ -102,7 +111,9 @@ class HRVAnalysisApp:
             max_workers=2,  # Conservative for HRV analysis
             default_timeout=300.0,  # 5 minute timeout
             progress_callback=self._update_progress,
-            status_callback=self._update_status
+            status_callback=self._update_status,
+            result_persistence_dir=str(cache_dir / "async_results"),
+            allow_background_processing=False  # Default to disabled for safety
         )
         
         # Initialize settings panel
@@ -559,6 +570,11 @@ class HRVAnalysisApp:
             if hasattr(self, 'async_processor') and settings.get('async_enabled', True):
                 # Async settings are applied at initialization, would need processor restart for changes
                 self.analysis_timeout = settings.get('async_timeout_seconds', 300.0)
+                
+                # Update background processing setting
+                allow_background = settings.get('async_allow_background_processing', False)
+                self.async_processor.allow_background_processing = allow_background
+                logger.info(f"Background processing: {'Enabled' if allow_background else 'Disabled'}")
             
             # Update analysis settings
             if hasattr(self, 'advanced_stats'):
@@ -574,8 +590,87 @@ class HRVAnalysisApp:
                 self.performance_monitor.update_interval = settings.get('monitor_update_interval', 2.0)
                 self.performance_monitor.max_history = settings.get('monitor_max_history', 60)
             
+            # Check for pending notifications from background processing
+            self._check_pending_notifications()
+            
         except Exception as e:
             logger.error(f"Error in _apply_settings: {e}")
+    
+    def _check_pending_notifications(self):
+        """Check for and display pending notifications from background processing."""
+        try:
+            if hasattr(self, 'async_processor'):
+                notifications = self.async_processor.get_pending_notifications()
+                
+                for notification in notifications:
+                    task_id = notification.get('task_id', 'Unknown')
+                    success = notification.get('success', False)
+                    message = notification.get('message', 'Task completed')
+                    timestamp = notification.get('timestamp', 0)
+                    
+                    # Format timestamp
+                    import datetime
+                    time_str = datetime.datetime.fromtimestamp(timestamp).strftime('%H:%M:%S')
+                    
+                    # Show notification to user
+                    if success:
+                        messagebox.showinfo(
+                            "Background Analysis Complete", 
+                            f"HRV analysis completed in background at {time_str}!\n\n"
+                            f"Task: {task_id}\n"
+                            f"Status: {message}\n\n"
+                            f"Results have been automatically saved and cached."
+                        )
+                        logger.info(f"Displayed success notification for background task {task_id}")
+                    else:
+                        error_msg = notification.get('error', 'Unknown error')
+                        messagebox.showwarning(
+                            "Background Analysis Issue",
+                            f"Background analysis encountered an issue at {time_str}.\n\n"
+                            f"Task: {task_id}\n"
+                            f"Error: {error_msg}\n\n"
+                            f"Partial results may have been saved for recovery."
+                        )
+                        logger.warning(f"Displayed error notification for background task {task_id}")
+                
+                if notifications:
+                    # Refresh results display in case we have new data
+                    self._refresh_analysis_results()
+                    
+        except Exception as e:
+            logger.error(f"Error checking pending notifications: {e}")
+    
+    def _refresh_analysis_results(self):
+        """Refresh analysis results from persisted data."""
+        try:
+            if hasattr(self, 'async_processor'):
+                persisted_tasks = self.async_processor.get_persisted_tasks()
+                
+                if persisted_tasks:
+                    logger.info(f"Found {len(persisted_tasks)} persisted results from background processing")
+                    
+                    # Try to load and merge persisted results
+                    merged_results = {}
+                    for task_id in persisted_tasks:
+                        result = self.async_processor._load_persisted_result(task_id)
+                        if result and isinstance(result, dict):
+                            merged_results.update(result)
+                    
+                    if merged_results:
+                        # Merge with existing results
+                        if self.analysis_results:
+                            self.analysis_results.update(merged_results)
+                        else:
+                            self.analysis_results = merged_results
+                        
+                        # Update displays
+                        self._update_results_display()
+                        self._update_plots_display()
+                        
+                        logger.info("Successfully loaded persisted analysis results")
+                        
+        except Exception as e:
+            logger.error(f"Error refreshing analysis results: {e}")
     
     def _get_cache_stats(self) -> Dict[str, Any]:
         """Get comprehensive cache statistics for performance monitoring."""
@@ -2551,6 +2646,130 @@ Special Thanks:
         except Exception as e:
             logger.error(f"Error setting up performance monitor: {e}")
     
+    def _on_window_closing(self):
+        """Handle window closing event with background processing management."""
+        try:
+            # Check if analysis is currently running
+            if self.analysis_running and hasattr(self, 'async_processor'):
+                # Check background processing setting
+                allow_background = self.async_processor.allow_background_processing
+                
+                if allow_background:
+                    # Ask user what they want to do
+                    result = messagebox.askyesnocancel(
+                        "Analysis in Progress",
+                        "HRV analysis is currently running.\n\n" +
+                        "Background processing is enabled. You can:\n\n" +
+                        "• YES: Close GUI but continue processing in background\n" +
+                        "• NO: Stop analysis and close application\n" +
+                        "• CANCEL: Keep application open\n\n" +
+                        "If you choose YES, results will be automatically saved\n" +
+                        "and you'll be notified when complete."
+                    )
+                    
+                    if result is True:  # YES - background processing
+                        logger.info("User chose to continue analysis in background")
+                        
+                        # Set GUI as disconnected
+                        self._gui_active = False
+                        self.async_processor.set_gui_connection_status(False)
+                        
+                        # Show final message
+                        messagebox.showinfo(
+                            "Background Processing Active",
+                            "Analysis will continue in the background.\n\n" +
+                            "• Results will be automatically saved\n" +
+                            "• You can safely close this window\n" +
+                            "• Restart the application later to see results\n" +
+                            "• Check log files for progress updates"
+                        )
+                        
+                        self._shutdown_in_progress = True
+                        self.root.quit()
+                        return
+                        
+                    elif result is False:  # NO - stop analysis
+                        logger.info("User chose to stop analysis and close")
+                        self._shutdown_analysis()
+                        self._shutdown_in_progress = True
+                        self.root.quit()
+                        return
+                        
+                    else:  # CANCEL - keep open
+                        logger.info("User chose to keep application open")
+                        return
+                        
+                else:
+                    # Background processing disabled - ask to stop analysis
+                    result = messagebox.askyesno(
+                        "Analysis in Progress",
+                        "HRV analysis is currently running.\n\n" +
+                        "Background processing is disabled.\n" +
+                        "Closing now will stop the analysis.\n\n" +
+                        "Do you want to close anyway?\n" +
+                        "(Progress will be lost)"
+                    )
+                    
+                    if result:
+                        logger.info("User chose to stop analysis and close")
+                        self._shutdown_analysis()
+                        self._shutdown_in_progress = True
+                        self.root.quit()
+                    return
+            else:
+                # No analysis running - normal close
+                if messagebox.askyesno("Quit", "Are you sure you want to quit?"):
+                    self._shutdown_in_progress = True
+                    self.root.quit()
+                    
+        except Exception as e:
+            logger.error(f"Error in window closing handler: {e}")
+            # Fallback - just close
+            self._shutdown_in_progress = True
+            self.root.quit()
+    
+    def _shutdown_analysis(self):
+        """Properly shutdown analysis and async processor."""
+        try:
+            if hasattr(self, 'async_processor') and self.async_processor._is_running:
+                logger.info("Shutting down async processor...")
+                
+                # Update status
+                if hasattr(self, 'async_status_var'):
+                    self.async_status_var.set("Shutting down...")
+                
+                # Stop processor
+                self.async_processor.shutdown(wait_for_completion=False, timeout=10.0)
+                
+                # Reset state
+                self.analysis_running = False
+                if hasattr(self, 'process_button'):
+                    self.process_button.configure(state='normal')
+                    
+                logger.info("Analysis shutdown complete")
+                
+        except Exception as e:
+            logger.error(f"Error shutting down analysis: {e}")
+    
+    def _on_window_focus(self, event):
+        """Handle window focus event."""
+        if event.widget == self.root:  # Only handle main window events
+            if not self._gui_active:
+                self._gui_active = True
+                if hasattr(self, 'async_processor'):
+                    self.async_processor.set_gui_connection_status(True)
+                logger.info("GUI reconnected - resuming normal operation")
+                
+                # Check for any pending notifications
+                self._check_pending_notifications()
+    
+    def _on_window_unfocus(self, event):
+        """Handle window unfocus event."""
+        if event.widget == self.root:  # Only handle main window events
+            # Don't immediately disconnect - user might just be switching windows
+            # Only disconnect if window is actually closed/minimized
+            pass
+
 def main():
     """Main entry point for the application.""" 
     # Setup logging

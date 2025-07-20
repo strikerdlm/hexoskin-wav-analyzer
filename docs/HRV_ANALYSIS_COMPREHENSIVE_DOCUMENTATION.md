@@ -94,6 +94,61 @@ python launch_hrv_analysis.py
 - Startup warnings about DFA and entropy computation complexity
 - Better task monitoring with informative completion messages
 
+### **🔄 PROBLEM 4: Timeout Recovery & Result Persistence System**
+*Implemented: 2025-01-14 00:00:00 UTC*
+
+**ISSUE:** Users experienced work loss due to timeouts, and processes continued in background without user awareness:
+- Analysis timeouts caused complete work loss
+- No recovery mechanism for partially completed work
+- Background processes ran without user consent
+- No notification system for completed background tasks
+- Results not preserved across application restarts
+
+**✅ COMPREHENSIVE SOLUTION:**
+
+**TIMEOUT RECOVERY SYSTEM:**
+- **Automatic Retry Logic**: Up to 2 retry attempts with increased timeout
+- **Intelligent Timeout Scaling**: Timeout increases 1.5x per retry attempt  
+- **Partial Result Preservation**: Failed tasks save intermediate results
+- **Stalled Task Detection**: Identifies and handles abandoned tasks
+- **Graceful Degradation**: Safe fallback values when computations fail
+
+**RESULT PERSISTENCE SYSTEM:**
+- **Automatic Result Saving**: All successful analyses saved to `hrv_results/` directory
+- **Crash Recovery**: Results preserved even if application crashes
+- **State Management**: Complete processor state saved for recovery
+- **Cross-Session Continuity**: Results available after application restart
+- **Metadata Tracking**: Complete task history with timestamps and error details
+
+**BACKGROUND PROCESSING CONTROLS:**
+- **Optional Background Mode**: Disabled by default for safety
+- **User Consent Required**: Clear dialogs before background processing
+- **GUI Connection Tracking**: Monitors when GUI is active/disconnected
+- **Smart Shutdown Handling**: Options to continue or stop analysis on window close
+- **Background Notifications**: System notifications when tasks complete
+
+**USER NOTIFICATION SYSTEM:**
+- **Completion Alerts**: Pop-up notifications when background analysis finishes
+- **Error Reporting**: Detailed error messages with recovery suggestions
+- **Progress Persistence**: Status messages preserved across sessions
+- **File-based Notifications**: Backup notification system if GUI unavailable
+- **Multi-platform Support**: Windows, macOS, and Linux notification compatibility
+
+**TECHNICAL IMPLEMENTATION:**
+- Enhanced `SafeAsyncProcessor` with result persistence (`result_*.pkl` files)
+- Background processing setting in Settings > Async Processing
+- Window event handlers for GUI connection management
+- Intelligent cleanup system (removes results older than 24 hours)
+- JSON-based state management and task metadata storage
+- Cross-platform notification system with fallbacks
+
+**USER EXPERIENCE IMPROVEMENTS:**
+- Clear options when closing during analysis (Continue/Stop/Cancel)
+- Automatic result loading on application restart
+- Progress messages indicate background processing status
+- Settings panel control for background processing preference
+- Enhanced startup messages explaining timeout and persistence features
+
 ### **❌ PROBLEM 2: Only Analyzing 3 Subjects Instead of All 8**
 *Fixed: 2025-07-20 12:44:17 UTC*
 
