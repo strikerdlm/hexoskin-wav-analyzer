@@ -26,6 +26,8 @@ import logging
 import json
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+import gc
+import psutil
 
 # Import enhanced HRV analysis components
 # Add parent directory to path for imports
@@ -527,24 +529,334 @@ class HRVAnalysisApp:
             logger.error(f"Error in _apply_settings: {e}")
     
     def _get_cache_stats(self) -> Dict[str, Any]:
-        """Get cache statistics for performance monitor."""
+        """Get comprehensive cache statistics for performance monitoring."""
         try:
             if hasattr(self, 'results_cache'):
-                return self.results_cache.get_cache_stats()
+                stats = self.results_cache.get_cache_stats()
+                
+                # Add additional derived metrics
+                stats['cache_efficiency'] = 'Excellent' if stats.get('hit_ratio', 0) > 0.8 else \
+                                          'Good' if stats.get('hit_ratio', 0) > 0.6 else \
+                                          'Fair' if stats.get('hit_ratio', 0) > 0.4 else 'Poor'
+                
+                stats['memory_utilization'] = stats.get('memory_usage_mb', 0) / stats.get('memory_limit_mb', 1)
+                
+                # Format compression stats for display
+                compression_stats = stats.get('compression_stats', {})
+                total_compressions = sum(compression_stats.values())
+                if total_compressions > 0:
+                    stats['compression_breakdown'] = {
+                        method: f"{count} ({count/total_compressions:.1%})" 
+                        for method, count in compression_stats.items()
+                    }
+                
+                return stats
             return {}
         except Exception as e:
-            logger.warning(f"Error getting cache stats: {e}")
+            logger.warning(f"Error getting comprehensive cache stats: {e}")
             return {}
     
     def _get_async_processor_stats(self) -> Dict[str, Any]:
-        """Get async processor statistics for performance monitor."""
+        """Get detailed async processor statistics."""
         try:
             if hasattr(self, 'async_processor'):
-                return self.async_processor.get_progress_info()
+                base_stats = self.async_processor.get_progress_info()
+                
+                # Add performance calculations
+                if hasattr(self.async_processor, '_task_history'):
+                    completed_tasks = [t for t in self.async_processor._task_history if t.get('status') == 'completed']
+                    if completed_tasks:
+                        avg_duration = sum(t.get('duration', 0) for t in completed_tasks) / len(completed_tasks)
+                        base_stats['average_task_duration'] = avg_duration
+                        base_stats['total_completed_tasks'] = len(completed_tasks)
+                
+                return base_stats
             return {}
         except Exception as e:
             logger.warning(f"Error getting async processor stats: {e}")
             return {}
+
+    def _get_data_loader_stats(self) -> Dict[str, Any]:
+        """Get data loader performance statistics."""
+        try:
+            if hasattr(self, 'data_loader') and hasattr(self.data_loader, 'optimized_loader'):
+                if self.data_loader.optimized_loader:
+                    return self.data_loader.optimized_loader.get_performance_stats()
+            return {}
+        except Exception as e:
+            logger.warning(f"Error getting data loader stats: {e}")
+            return {}
+
+    def _show_advanced_cache_stats(self):
+        """Show detailed cache performance statistics in a new window."""
+        try:
+            cache_stats = self._get_cache_stats()
+            if not cache_stats:
+                messagebox.showinfo("Cache Statistics", "No cache statistics available")
+                return
+            
+            # Create new window for detailed stats
+            stats_window = tk.Toplevel(self.root)
+            stats_window.title("Advanced Cache Performance Statistics")
+            stats_window.geometry("800x600")
+            
+            # Create scrollable text widget
+            text_frame = ttk.Frame(stats_window)
+            text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            
+            text_widget = tk.Text(text_frame, wrap=tk.WORD, font=('Courier', 10))
+            scrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=text_widget.yview)
+            text_widget.configure(yscrollcommand=scrollbar.set)
+            
+            text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+            # Generate comprehensive report
+            if hasattr(self.results_cache, 'get_performance_report'):
+                report = self.results_cache.get_performance_report()
+            else:
+                report = self._generate_cache_stats_report(cache_stats)
+            
+            text_widget.insert(tk.END, report)
+            text_widget.configure(state=tk.DISABLED)
+            
+            # Add refresh button
+            button_frame = ttk.Frame(stats_window)
+            button_frame.pack(fill=tk.X, padx=10, pady=5)
+            
+            ttk.Button(button_frame, text="Refresh", 
+                      command=lambda: self._refresh_stats_window(text_widget, cache_stats)).pack(side=tk.LEFT)
+            ttk.Button(button_frame, text="Export Report", 
+                      command=lambda: self._export_performance_report(report)).pack(side=tk.LEFT, padx=5)
+            ttk.Button(button_frame, text="Close", 
+                      command=stats_window.destroy).pack(side=tk.RIGHT)
+            
+        except Exception as e:
+            logger.error(f"Error showing advanced cache stats: {e}")
+            messagebox.showerror("Error", f"Failed to show cache statistics: {e}")
+
+    def _generate_cache_stats_report(self, stats: Dict[str, Any]) -> str:
+        """Generate a comprehensive cache statistics report."""
+        report = f"""
+=== Enhanced HRV Cache Performance Report ===
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+📊 CACHE EFFICIENCY METRICS:
+• Cache Hit Ratio: {stats.get('hit_ratio', 0):.1%} ({stats.get('cache_efficiency', 'Unknown')})
+• Total Requests: {stats.get('total_requests', 0):,}
+• Cache Hits: {stats.get('cache_hits', 0):,}
+• Cache Misses: {stats.get('cache_misses', 0):,}
+• Average Load Time: {stats.get('average_load_time_ms', 0):.1f}ms
+
+💾 MEMORY UTILIZATION:
+• Current Usage: {stats.get('memory_usage_mb', 0):.1f}MB / {stats.get('memory_limit_mb', 0):.1f}MB
+• Utilization: {stats.get('memory_utilization', 0):.1%}
+• Total Entries: {stats.get('total_entries', 0):,}
+• Memory-Resident: {stats.get('memory_entries', 0):,}
+• Evictions: {stats.get('evictions', 0):,}
+
+🗜️ COMPRESSION ANALYTICS:
+• Total Savings: {stats.get('compression_savings_mb', 0):.2f}MB
+• Compression Methods:
+"""
+        
+        # Add compression breakdown
+        compression_breakdown = stats.get('compression_breakdown', {})
+        for method, count_info in compression_breakdown.items():
+            report += f"  • {method.upper()}: {count_info}\n"
+        
+        report += f"""
+🚀 PREDICTIVE CACHING:
+• Prefetch Candidates: {stats.get('prefetch_candidates', 0)}
+• Prefetch Efficiency: {stats.get('prefetch_efficiency', 0):.1%}
+• Access Patterns: {stats.get('access_patterns_tracked', 0)} tracked
+
+📈 PERFORMANCE TRENDS:
+• Recent Memory Trend: {', '.join(str(m.get('memory_mb', 0)) + 'MB' for m in stats.get('memory_usage_trend', [])[-5:])}
+
+🔧 CACHE CONFIGURATION:
+• Cache Directory: {stats.get('cache_dir', 'Unknown')}
+• Entry Limit: {stats.get('entry_limit', 0):,}
+"""
+        return report
+
+    def _refresh_stats_window(self, text_widget: tk.Text, old_stats: Dict[str, Any]):
+        """Refresh the statistics window with updated data."""
+        try:
+            new_stats = self._get_cache_stats()
+            report = self._generate_cache_stats_report(new_stats)
+            
+            text_widget.configure(state=tk.NORMAL)
+            text_widget.delete(1.0, tk.END)
+            text_widget.insert(tk.END, report)
+            text_widget.configure(state=tk.DISABLED)
+            
+        except Exception as e:
+            logger.error(f"Error refreshing stats window: {e}")
+
+    def _export_performance_report(self, report: str):
+        """Export performance report to file."""
+        try:
+            from tkinter import filedialog
+            
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".txt",
+                filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+                title="Export Performance Report"
+            )
+            
+            if file_path:
+                with open(file_path, 'w') as f:
+                    f.write(report)
+                messagebox.showinfo("Export Complete", f"Performance report exported to:\n{file_path}")
+                
+        except Exception as e:
+            logger.error(f"Error exporting performance report: {e}")
+            messagebox.showerror("Export Error", f"Failed to export report: {e}")
+
+    def _show_database_stats(self):
+        """Show database optimization statistics."""
+        try:
+            db_stats = self._get_data_loader_stats()
+            
+            if not db_stats:
+                messagebox.showinfo("Database Statistics", "No database statistics available.\nLoad data first to see optimization metrics.")
+                return
+            
+            # Create stats window
+            stats_window = tk.Toplevel(self.root)
+            stats_window.title("Database Optimization Statistics")
+            stats_window.geometry("750x500")
+            
+            # Create text display
+            text_frame = ttk.Frame(stats_window)
+            text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            
+            text_widget = tk.Text(text_frame, wrap=tk.WORD, font=('Courier', 10))
+            scrollbar = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=text_widget.yview)
+            text_widget.configure(yscrollcommand=scrollbar.set)
+            
+            text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+            # Generate database performance report
+            if hasattr(self.data_loader, 'optimized_loader') and self.data_loader.optimized_loader:
+                try:
+                    report = self.data_loader.optimized_loader.get_performance_report()
+                except AttributeError:
+                    report = self._generate_db_stats_report(db_stats)
+            else:
+                report = self._generate_db_stats_report(db_stats)
+            
+            text_widget.insert(tk.END, report)
+            text_widget.configure(state=tk.DISABLED)
+            
+            # Close button
+            ttk.Button(stats_window, text="Close", command=stats_window.destroy).pack(pady=5)
+            
+        except Exception as e:
+            logger.error(f"Error showing database stats: {e}")
+            messagebox.showerror("Error", f"Failed to show database statistics: {e}")
+
+    def _generate_db_stats_report(self, stats: Dict[str, Any]) -> str:
+        """Generate database performance report."""
+        return f"""
+=== Database Optimization Performance Report ===
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+📊 LOADING PERFORMANCE:
+• Total Records: {stats.get('total_records', 0):,}
+• Loading Speed: {stats.get('records_per_second', 0):.0f} records/sec
+• Chunks Processed: {stats.get('chunks_loaded', 0):,}
+• Peak Memory: {stats.get('memory_peak_mb', 0):.1f}MB
+
+🔗 CONNECTION POOLING:
+• Active Connections: {stats.get('connection_pool_active', 'N/A')}
+• Total Connections: {stats.get('connection_pool_total', 'N/A')}
+• Connection Requests: {stats.get('connection_requests', 'N/A')}
+• Average Wait Time: {stats.get('average_connection_wait_ms', 0):.1f}ms
+
+🚀 QUERY OPTIMIZATION:
+• Queries Executed: {stats.get('queries_executed', 0):,}
+• Index Hits: {stats.get('index_hits', 0):,}
+• Table Scans: {stats.get('table_scans', 0):,}
+• Optimizations Applied: {stats.get('optimization_applied', 0):,}
+
+📈 ADAPTIVE FEATURES:
+• Adaptive Adjustments: {stats.get('adaptive_adjustments', 0):,}
+• Performance Trend: {stats.get('performance_trend_slope', 0):+.0f} rec/s change
+• Stability Score: {stats.get('performance_stability', 0):.1%}
+"""
+
+    def _clear_all_caches(self):
+        """Clear all caches and reset performance counters."""
+        try:
+            cleared_items = []
+            
+            # Clear HRV results cache
+            if hasattr(self, 'results_cache'):
+                stats_before = self.results_cache.get_cache_stats()
+                self.results_cache.clear_cache()
+                cleared_items.append(f"HRV Cache: {stats_before.get('total_entries', 0)} entries cleared")
+            
+            # Clear data loader caches
+            if hasattr(self, 'data_loader') and hasattr(self.data_loader, 'optimized_loader'):
+                if self.data_loader.optimized_loader and hasattr(self.data_loader.optimized_loader, 'query_cache'):
+                    if self.data_loader.optimized_loader.query_cache:
+                        query_count = len(self.data_loader.optimized_loader.query_cache)
+                        self.data_loader.optimized_loader.query_cache.clear()
+                        cleared_items.append(f"Query Cache: {query_count} queries cleared")
+            
+            # Force garbage collection
+            gc.collect()
+            
+            if cleared_items:
+                message = "Successfully cleared:\n" + "\n".join(f"• {item}" for item in cleared_items)
+                message += "\n\nMemory freed and performance counters reset."
+            else:
+                message = "No caches found to clear."
+            
+            messagebox.showinfo("Cache Cleared", message)
+            
+            # Update status
+            self._update_status("All caches cleared - memory freed")
+            
+        except Exception as e:
+            logger.error(f"Error clearing caches: {e}")
+            messagebox.showerror("Error", f"Failed to clear caches: {e}")
+
+    def _warm_cache_for_analysis(self):
+        """Warm cache with commonly used analysis patterns."""
+        try:
+            if not hasattr(self, 'results_cache'):
+                messagebox.showwarning("Warning", "No cache system available")
+                return
+            
+            if self.loaded_data is None:
+                messagebox.showwarning("Warning", "Load data first before warming cache")
+                return
+            
+            # Get unique subjects
+            subjects = self.loaded_data['subject'].unique().tolist()
+            
+            # Common analysis configurations
+            common_configs = [
+                {'fast_mode': True, 'bootstrap_ci': False},
+                {'fast_mode': False, 'bootstrap_ci': True},
+                {'fast_mode': False, 'bootstrap_ci': False}
+            ]
+            
+            # Start cache warming
+            self.results_cache.warm_cache_for_subjects(subjects, common_configs)
+            
+            messagebox.showinfo("Cache Warming", 
+                               f"Cache warming initiated for {len(subjects)} subjects "
+                               f"with {len(common_configs)} analysis configurations.\n\n"
+                               "This will improve performance for future analysis runs.")
+            
+        except Exception as e:
+            logger.error(f"Error warming cache: {e}")
+            messagebox.showerror("Error", f"Failed to warm cache: {e}")
     
     def _toggle_performance_monitor(self):
         """Toggle performance monitor visibility."""
