@@ -893,33 +893,33 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             self.data_status_label.configure(text="Loading all subject data...")
             self.root.update_idletasks()
             
-            # Define the working folder path where CSV files are located
+            # Use the configured data directory (root /Data folder)
             import os
             from pathlib import Path
             
-            # Get the working folder path (we're currently in enhanced_hrv_analysis/gui/)
-            current_dir = Path(__file__).parent.parent  # Go up to enhanced_hrv_analysis
-            working_folder = current_dir.parent  # Go up to working_folder
+            # Use the pre-configured data directory pointing to root /Data folder
+            data_folder = self.data_directory
             
-            logger.info(f"Looking for data in: {working_folder}")
+            logger.info(f"Looking for data in: {data_folder}")
             
-            if not working_folder.exists():
-                # Fallback: try different paths
+            if not data_folder.exists():
+                # Fallback: try alternative paths to find the root Data folder
                 possible_paths = [
-                    Path(r"C:\Users\User\OneDrive\FAC\Research\Valquiria\Data\working_folder"),
-                    Path("../.."),
-                    Path("..")
+                    Path(__file__).parent.parent.parent.parent.parent / "Data",  # Root /Data
+                    Path("../../../../Data"),  # Relative path to root /Data
+                    Path("../../../../../Data"),  # Alternative relative path
+                    Path(r"C:\Users\User\OneDrive\FAC\Research\Valquiria\Data\Data"),  # Windows absolute path
                 ]
                 
-                working_folder = None
+                data_folder = None
                 for path in possible_paths:
-                    if path.exists() and (path / "T01_Mara.csv").exists():
-                        working_folder = path
-                        logger.info(f"Found working folder at: {working_folder}")
+                    if path.exists() and (path / "merged_data.db").exists():
+                        data_folder = path
+                        logger.info(f"Found Data folder at: {data_folder}")
                         break
                 
-                if working_folder is None:
-                    raise FileNotFoundError("Cannot locate Valquiria working folder")
+                if data_folder is None:
+                    raise FileNotFoundError("Cannot locate root /Data folder with merged_data.db")
             
             # Define all Valquiria subject files
             subject_files = [
@@ -934,7 +934,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             ]
             
             # Try to load from database first (if available)
-            db_path = working_folder / "merged_data.db"
+            db_path = data_folder / "merged_data.db"
             if db_path.exists():
                 logger.info("Loading from Valquiria database...")
                 
@@ -956,11 +956,11 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                     logger.info(f"Successfully loaded {len(self.loaded_data):,} records from database")
                     return
             
-            # Load from CSV files
+            # Load from CSV files (fallback if database not available)
             logger.info("Loading from Valquiria CSV files...")
             available_files = []
             for subject_file in subject_files:
-                file_path = working_folder / subject_file
+                file_path = data_folder / subject_file
                 if file_path.exists():
                     available_files.append(str(file_path))
                     logger.info(f"Found: {subject_file}")
@@ -968,11 +968,27 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                     logger.warning(f"Subject file not found: {subject_file}")
             
             if not available_files:
-                raise FileNotFoundError("No Valquiria subject CSV files found")
+                logger.warning("No Valquiria subject CSV files found in root /Data folder")
+                # Try to look in the embedded Data folder as additional fallback
+                embedded_data_folder = Path(__file__).parent.parent / "Data"
+                if embedded_data_folder.exists():
+                    logger.info(f"Trying embedded data folder: {embedded_data_folder}")
+                    for subject_file in subject_files:
+                        file_path = embedded_data_folder / subject_file
+                        if file_path.exists():
+                            available_files.append(str(file_path))
+                            logger.info(f"Found in embedded folder: {subject_file}")
+                    
+                    if available_files:
+                        data_folder = embedded_data_folder  # Use embedded folder for CSV loading
+                    else:
+                        raise FileNotFoundError("No Valquiria subject CSV files found in any location")
+                else:
+                    raise FileNotFoundError("No Valquiria subject CSV files found")
             
             # Load all available CSV files
             self.loaded_data = self.data_loader.load_csv_data(csv_files=[Path(f).name for f in available_files], 
-                                                             data_dir=str(working_folder))
+                                                             data_dir=str(data_folder))
             
             if self.loaded_data is not None and not self.loaded_data.empty:
                 self._update_data_info_valquiria("csv")
