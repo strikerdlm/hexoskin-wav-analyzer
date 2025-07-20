@@ -111,15 +111,27 @@ class SplashScreen:
         )
         self.percentage_label.pack(pady=(10, 0))
         
-        # Version info
-        version_label = tk.Label(
-            main_frame,
-            text="Colombia - 2025",
-            font=('Arial', 8),
-            fg='#7F8C8D',
+        # Version and year info
+        version_frame = tk.Frame(main_frame, bg='#2C3E50')
+        version_frame.pack(side='bottom', pady=(30, 10))
+        
+        year_label = tk.Label(
+            version_frame,
+            text="© 2025",
+            font=('Arial', 14, 'bold'),
+            fg='#FFFFFF',
             bg='#2C3E50'
         )
-        version_label.pack(side='bottom', pady=(20, 0))
+        year_label.pack()
+        
+        country_label = tk.Label(
+            version_frame,
+            text="COLOMBIA",
+            font=('Arial', 11, 'bold'),
+            fg='#F39C12',
+            bg='#2C3E50'
+        )
+        country_label.pack(pady=(3, 0))
         
     def update_progress(self, percentage, status_text="", details_text=""):
         """Update progress bar and percentage display."""
