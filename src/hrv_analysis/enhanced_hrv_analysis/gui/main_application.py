@@ -542,32 +542,60 @@ class HRVAnalysisApp:
         self.root.geometry(f'{width}x{height}+{x}+{y}')
         
     def _update_status(self, message: str):
-        """Update status bar and async status display."""
-        self.status_var.set(message)
-        
-        # Also update async status display if it exists
-        if hasattr(self, 'async_status_var'):
-            self.async_status_var.set(message)
+        """Update status bar and async status display with thread safety."""
+        if not self._gui_active:
+            return
             
-        self.root.update_idletasks()
+        try:
+            self.status_var.set(message)
+            
+            # Also update async status display if it exists
+            if hasattr(self, 'async_status_var'):
+                self.async_status_var.set(message)
+                
+            self.root.update_idletasks()
+        except Exception as e:
+            if "main thread is not in main loop" in str(e) or "invalid command name" in str(e):
+                logger.warning("Status update failed - main thread unavailable")
+                self._gui_active = False
+            else:
+                logger.warning(f"Status update error: {e}")
         
     def _update_progress(self, value: float, message: str = ""):
-        """Update progress bar, status, and progress details."""
+        """Update progress bar, status, and progress details with thread safety."""
+        if not self._gui_active:
+            return
+            
         def update():
-            self.progress_var.set(value)
-            if message:
-                self._update_status(message)
-                
-                # Also update progress details if available
-                if hasattr(self, 'progress_details_var'):
-                    # Add percentage to details if meaningful
-                    if value > 0:
-                        detail_msg = f"{message} ({value:.0f}%)"
-                    else:
-                        detail_msg = message
-                    self.progress_details_var.set(detail_msg)
+            try:
+                if self._gui_active and hasattr(self, 'progress_var'):
+                    self.progress_var.set(value)
+                    if message:
+                        self._update_status(message)
+                        
+                        # Also update progress details if available
+                        if hasattr(self, 'progress_details_var'):
+                            # Add percentage to details if meaningful
+                            if value > 0:
+                                detail_msg = f"{message} ({value:.0f}%)"
+                            else:
+                                detail_msg = message
+                            self.progress_details_var.set(detail_msg)
+            except Exception as e:
+                if "main thread is not in main loop" in str(e) or "invalid command name" in str(e):
+                    logger.warning("Progress update failed - main thread unavailable")
+                    self._gui_active = False
+                else:
+                    logger.warning(f"Progress update error: {e}")
         
-        self.root.after(0, update)
+        try:
+            self.root.after(0, update)
+        except Exception as e:
+            if "main thread is not in main loop" in str(e):
+                logger.warning("Cannot schedule progress update - main thread unavailable")
+                self._gui_active = False
+            else:
+                logger.warning(f"Scheduling progress update error: {e}")
     
     def _update_init_progress(self, percentage: float, message: str):
         """Update progress during initialization if callback is available."""
@@ -2725,7 +2753,8 @@ Special Thanks:
                         logger.info("User chose to stop analysis and close")
                         self._shutdown_analysis()
                         self._shutdown_in_progress = True
-                        self.root.quit()
+                        # Add a small delay to allow shutdown to complete
+                        self.root.after(100, self.root.quit)
                         return
                         
                     else:  # CANCEL - keep open
@@ -2764,22 +2793,42 @@ Special Thanks:
     def _shutdown_analysis(self):
         """Properly shutdown analysis and async processor."""
         try:
+            # Set GUI as disconnected
+            self._gui_active = False
+            
+            # Shutdown async processor
             if hasattr(self, 'async_processor') and self.async_processor._is_running:
                 logger.info("Shutting down async processor...")
                 
-                # Update status
-                if hasattr(self, 'async_status_var'):
-                    self.async_status_var.set("Shutting down...")
+                # Set GUI connection status to false to prevent callback errors
+                self.async_processor.set_gui_connection_status(False)
+                
+                # Update status safely
+                try:
+                    if hasattr(self, 'async_status_var'):
+                        self.async_status_var.set("Shutting down...")
+                except Exception as e:
+                    logger.debug(f"Could not update status during shutdown: {e}")
                 
                 # Stop processor
                 self.async_processor.shutdown(wait_for_completion=False, timeout=10.0)
                 
                 # Reset state
                 self.analysis_running = False
-                if hasattr(self, 'process_button'):
-                    self.process_button.configure(state='normal')
+                try:
+                    if hasattr(self, 'process_button'):
+                        self.process_button.configure(state='normal')
+                except Exception as e:
+                    logger.debug(f"Could not update button during shutdown: {e}")
                     
                 logger.info("Analysis shutdown complete")
+            
+            # Shutdown performance monitor
+            if hasattr(self, 'performance_monitor') and self.performance_monitor:
+                logger.info("Shutting down performance monitor...")
+                self.performance_monitor.set_gui_connection_status(False)
+                self.performance_monitor.shutdown()
+                logger.info("Performance monitor shutdown complete")
                 
         except Exception as e:
             logger.error(f"Error shutting down analysis: {e}")
@@ -2791,6 +2840,8 @@ Special Thanks:
                 self._gui_active = True
                 if hasattr(self, 'async_processor'):
                     self.async_processor.set_gui_connection_status(True)
+                if hasattr(self, 'performance_monitor') and self.performance_monitor:
+                    self.performance_monitor.set_gui_connection_status(True)
                 logger.info("GUI reconnected - resuming normal operation")
                 
                 # Check for any pending notifications

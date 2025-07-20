@@ -58,6 +58,9 @@ class PerformanceMonitor:
             'system_cpu_percent': 0.0
         }
         
+        # GUI connection tracking
+        self._gui_connected = True
+        
         self._setup_ui()
         
     def _setup_ui(self):
@@ -168,24 +171,61 @@ class PerformanceMonitor:
         else:
             self.start_monitoring()
             
+    def _safe_gui_update(self, update_func):
+        """
+        Safely update GUI elements, handling thread disconnection.
+        
+        Args:
+            update_func: Function that updates GUI elements
+            
+        Returns:
+            True if update succeeded, False if GUI is disconnected
+        """
+        if not self._gui_connected:
+            return False
+            
+        try:
+            update_func()
+            return True
+        except Exception as e:
+            if "main thread is not in main loop" in str(e) or "invalid command name" in str(e):
+                logger.warning("GUI update failed - main thread unavailable, stopping performance monitoring")
+                self._gui_connected = False
+                self.monitoring_active = False  # Stop monitoring
+                return False
+            else:
+                logger.warning(f"GUI update error: {e}")
+                return False
+            
     def _monitoring_loop(self):
         """Main monitoring loop running in separate thread."""
-        while self.monitoring_active:
+        while self.monitoring_active and self._gui_connected:
             try:
                 self._update_metrics()
                 time.sleep(self.update_interval)
             except Exception as e:
                 logger.error(f"Error in monitoring loop: {e}")
+                # If we get main thread errors, stop monitoring
+                if "main thread is not in main loop" in str(e):
+                    logger.warning("Main thread unavailable, stopping performance monitoring")
+                    self._gui_connected = False
+                    self.monitoring_active = False
+                    break
                 time.sleep(self.update_interval)
+                
+        logger.info("Performance monitoring loop stopped")
                 
     def _update_metrics(self):
         """Update all performance metrics."""
+        if not self._gui_connected:
+            return
+            
         try:
             # Get cache statistics
             if self.cache_provider:
                 try:
                     cache_stats = self.cache_provider()
-                    self._update_cache_metrics(cache_stats)
+                    self._safe_gui_update(lambda: self._update_cache_metrics(cache_stats))
                 except Exception as e:
                     logger.warning(f"Error getting cache stats: {e}")
             
@@ -193,18 +233,20 @@ class PerformanceMonitor:
             if self.async_processor_provider:
                 try:
                     async_stats = self.async_processor_provider()
-                    self._update_async_metrics(async_stats)
+                    self._safe_gui_update(lambda: self._update_async_metrics(async_stats))
                 except Exception as e:
                     logger.warning(f"Error getting async stats: {e}")
             
             # Get system resource statistics
-            self._update_system_metrics()
+            self._safe_gui_update(self._update_system_metrics)
             
             # Update timestamp
-            self.last_update_var.set(datetime.now().strftime("%H:%M:%S"))
+            self._safe_gui_update(lambda: self.last_update_var.set(datetime.now().strftime("%H:%M:%S")))
             
         except Exception as e:
             logger.error(f"Error updating metrics: {e}")
+            if "main thread is not in main loop" in str(e):
+                self._gui_connected = False
             
     def _update_cache_metrics(self, cache_stats: Dict[str, Any]):
         """Update cache-related metrics."""
@@ -317,4 +359,32 @@ class PerformanceMonitor:
     def clear_history(self):
         """Clear metrics history."""
         self.stats_history.clear()
-        logger.info("Performance metrics history cleared") 
+        logger.info("Performance metrics history cleared")
+        
+    def set_gui_connection_status(self, connected: bool):
+        """
+        Set GUI connection status to control monitoring.
+        
+        Args:
+            connected: True if GUI is connected and active
+        """
+        was_connected = self._gui_connected
+        self._gui_connected = connected
+        
+        if not connected and was_connected:
+            logger.info("GUI disconnected - stopping performance monitoring")
+            self.monitoring_active = False
+        elif connected and not was_connected:
+            logger.info("GUI reconnected - performance monitoring can resume")
+            
+    def shutdown(self):
+        """Safely shutdown performance monitoring."""
+        logger.info("Shutting down performance monitor...")
+        self._gui_connected = False
+        self.monitoring_active = False
+        
+        # Wait a moment for the monitoring thread to finish
+        if hasattr(self, 'monitor_thread') and self.monitor_thread and self.monitor_thread.is_alive():
+            self.monitor_thread.join(timeout=2.0)
+            
+        logger.info("Performance monitor shutdown complete") 

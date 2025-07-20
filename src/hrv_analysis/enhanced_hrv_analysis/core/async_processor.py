@@ -228,8 +228,39 @@ class SafeAsyncProcessor:
                 logger.info("Background processing enabled - continuing tasks")
                 self._notify_background_processing()
     
+    def _safe_gui_callback(self, callback_func, *args, **kwargs):
+        """
+        Safely call a GUI callback function, handling thread disconnection.
+        
+        Args:
+            callback_func: The callback function to call
+            *args: Positional arguments for the callback
+            **kwargs: Keyword arguments for the callback
+            
+        Returns:
+            True if callback succeeded, False if GUI is disconnected
+        """
+        if not self._gui_connected or not callback_func:
+            return False
+            
+        try:
+            callback_func(*args, **kwargs)
+            return True
+        except Exception as e:
+            if "main thread is not in main loop" in str(e) or "invalid command name" in str(e):
+                logger.warning("GUI callback failed - main thread unavailable, disabling GUI callbacks")
+                self._gui_connected = False
+                return False
+            else:
+                logger.warning(f"GUI callback error: {e}")
+                return False
+    
     def _notify_background_processing(self):
         """Notify user about background processing."""
+        if not self._gui_connected:
+            logger.info("GUI not connected - skipping background processing notification")
+            return
+            
         try:
             import tkinter.messagebox as messagebox
             import threading
@@ -252,6 +283,8 @@ class SafeAsyncProcessor:
                         
                 except Exception as e:
                     logger.warning(f"Could not show background processing notification: {e}")
+                    if "main thread is not in main loop" in str(e):
+                        self._gui_connected = False
             
             # Show notification in separate thread to avoid GUI blocking
             notification_thread = threading.Thread(target=show_notification, daemon=True)
@@ -524,8 +557,7 @@ class SafeAsyncProcessor:
                 task.state = ProcessingState.RUNNING
                 task.start_time = time.time()
                 
-                if self.status_callback:
-                    self.status_callback(f"Processing {task.task_id}...")
+                self._safe_gui_callback(self.status_callback, f"Processing {task.task_id}...")
                 
                 # Submit to executor with enhanced timeout handling
                 future = self._executor.submit(
@@ -602,18 +634,26 @@ class SafeAsyncProcessor:
                 self._completed_tasks[task.task_id] = self._active_tasks.pop(task.task_id, task)
                 
                 # Update progress with enhanced status
-                if self.progress_callback:
-                    progress_info = self.get_progress_info()
-                    
-                    # Enhanced progress message
-                    if progress_info['total_tasks'] > 0:
-                        completed_pct = (progress_info['completed'] / progress_info['total_tasks']) * 100
-                        status_msg = f"Completed {progress_info['completed']}/{progress_info['total_tasks']} tasks"
+                if self.progress_callback and self._gui_connected:
+                    try:
+                        progress_info = self.get_progress_info()
                         
-                        if not self._gui_connected and self.allow_background_processing:
-                            status_msg += " (Background)"
+                        # Enhanced progress message
+                        if progress_info['total_tasks'] > 0:
+                            completed_pct = (progress_info['completed'] / progress_info['total_tasks']) * 100
+                            status_msg = f"Completed {progress_info['completed']}/{progress_info['total_tasks']} tasks"
                             
-                        self.progress_callback(status_msg, completed_pct)
+                            if not self._gui_connected and self.allow_background_processing:
+                                status_msg += " (Background)"
+                                
+                            self.progress_callback(status_msg, completed_pct)
+                    except Exception as e:
+                        # If GUI callback fails, likely main thread is gone
+                        if "main thread is not in main loop" in str(e):
+                            logger.warning("GUI callback failed - main thread unavailable, disabling GUI callbacks")
+                            self._gui_connected = False
+                        else:
+                            logger.warning(f"Progress callback error: {e}")
                     
             except Exception as e:
                 logger.error(f"Error in enhanced task processing loop: {e}")
