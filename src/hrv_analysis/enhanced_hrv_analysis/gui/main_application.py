@@ -78,7 +78,7 @@ class HRVAnalysisApp:
             root: Main Tkinter root window
         """
         self.root = root
-        self.root.title("Enhanced HRV Analysis System - Dr. Diego Malpica - Valquiria Dataset")
+        self.root.title("Enhanced HRV Analysis System - Valquiria Dataset")
         self.root.geometry("1200x800")
         
         # Initialize components
@@ -228,20 +228,11 @@ class HRVAnalysisApp:
         # Title
         title_label = ttk.Label(self.left_panel, text="Enhanced HRV Analysis", 
                                style='Title.TLabel')
-        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 5), sticky=tk.W)
+        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 15), sticky=tk.W)
         
-        # Author credit
-        author_label = ttk.Label(self.left_panel, text="By Dr. Diego Malpica - Aerospace Medicine Specialist", 
-                                style='Subtitle.TLabel')
-        author_label.grid(row=1, column=0, columnspan=2, pady=(0, 5), sticky=tk.W)
-        
-        # Mission context
-        mission_label = ttk.Label(self.left_panel, text="DIMAE / FAC / Colombia - Valquiria Crew", 
-                                 style='Caption.TLabel')
-        mission_label.grid(row=2, column=0, columnspan=2, pady=(0, 15), sticky=tk.W)
         # Data Loading Frame
         data_frame = ttk.LabelFrame(self.left_panel, text="Valquiria Dataset", padding="5")
-        data_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        data_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         data_frame.columnconfigure(0, weight=1)
         
         # Status label for data loading
@@ -271,7 +262,7 @@ class HRVAnalysisApp:
         """Setup analysis configuration controls."""
         # Analysis Configuration Frame
         config_frame = ttk.LabelFrame(self.left_panel, text="Analysis Configuration", padding="5")
-        config_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        config_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
         # HRV Domains selection
         ttk.Label(config_frame, text="HRV Domains:", style='Heading.TLabel').grid(
@@ -320,7 +311,7 @@ class HRVAnalysisApp:
         """Setup processing controls."""
         # Processing Controls Frame
         control_frame = ttk.LabelFrame(self.left_panel, text="Processing Controls", padding="5")
-        control_frame.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        control_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
         # Process button
         self.process_button = ttk.Button(control_frame, text="Run Analysis", 
@@ -344,7 +335,7 @@ class HRVAnalysisApp:
         """Setup export controls.""" 
         # Export Frame
         export_frame = ttk.LabelFrame(self.left_panel, text="Export", padding="5")
-        export_frame.grid(row=6, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        export_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
         ttk.Button(export_frame, text="Export Results", 
                   command=self._export_results,
@@ -2270,11 +2261,19 @@ A comprehensive tool for Heart Rate Variability analysis
 featuring advanced statistical methods, machine learning, 
 and interactive visualizations.
 
+Author: Dr. Diego Malpica - Aerospace Medicine Specialist
+Organization: DIMAE / FAC / Colombia
+
 Created for the Valquiria Space Analog Simulation project.
 
-© 2024 Enhanced HRV Analysis Team"""
+Special Thanks:
+• Women AeroSTEAM
+• Centro de Telemedicina de Colombia  
+• Valquiria Space Analog Crew
+
+© 2025 Dr. Diego Malpica"""
         
-        messagebox.showinfo("About", about_text)
+        messagebox.showinfo("About Enhanced HRV Analysis", about_text)
         
     def _apply_memory_protection(self, hr_data: pd.Series, subject_key: str) -> pd.Series:
         """
@@ -2467,7 +2466,7 @@ Created for the Valquiria Space Analog Simulation project.
         """Setup the performance monitoring section."""
         try:
             monitor_frame = ttk.Frame(self.left_panel, padding="2")
-            monitor_frame.grid(row=7, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+            monitor_frame.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
             
             # Initialize performance monitor with provider functions
             self.performance_monitor = PerformanceMonitor(
