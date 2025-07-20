@@ -1374,9 +1374,13 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         # Submit analysis task to async processor
         analysis_task_id = f"hrv_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
+        # Capture GUI state before async execution (must be done in main thread)
+        analysis_config = self._capture_analysis_config()
+        
         success = self.async_processor.submit_task(
             task_id=analysis_task_id,
             func=self._perform_analysis_async,
+            analysis_config=analysis_config,  # Pass config as parameter
             timeout=self.analysis_timeout
         )
         
@@ -1467,26 +1471,73 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             if task_id in self.current_analysis_tasks:
                 self.current_analysis_tasks.remove(task_id)
     
-    def _perform_analysis_async(self) -> Dict[str, Any]:
+    def _capture_analysis_config(self) -> Dict[str, Any]:
+        """
+        Capture all GUI state needed for analysis.
+        This must be called from the main thread before async processing.
+        
+        Returns:
+            Dictionary containing all analysis configuration
+        """
+        try:
+            # Capture domain selections
+            selected_domains = []
+            for domain, var in self.domain_vars.items():
+                if var.get():
+                    selected_domains.append(domain)
+            
+            # Capture other analysis options
+            config = {
+                'selected_domains': selected_domains,
+                'fast_mode': self.fast_mode_var.get() if hasattr(self, 'fast_mode_var') else False,
+                'bootstrap_ci': self.bootstrap_ci_var.get() if hasattr(self, 'bootstrap_ci_var') else False,
+                'clustering_enabled': self.clustering_var.get() if hasattr(self, 'clustering_var') else False,
+                'forecasting_enabled': self.forecasting_var.get() if hasattr(self, 'forecasting_var') else False,
+                'current_subject': self.current_subject,
+                'max_bootstrap_samples': self.max_bootstrap_samples,
+                'analysis_timeout': self.analysis_timeout,
+                'cache_version': '2.1'
+            }
+            
+            logger.info(f"Captured analysis config: {len(selected_domains)} domains, "
+                       f"fast_mode={config['fast_mode']}, bootstrap_ci={config['bootstrap_ci']}")
+            
+            return config
+            
+        except Exception as e:
+            logger.error(f"Error capturing analysis config: {e}")
+            # Return default config
+            return {
+                'selected_domains': [HRVDomain.TIME, HRVDomain.FREQUENCY],
+                'fast_mode': False,
+                'bootstrap_ci': False,
+                'clustering_enabled': False,
+                'forecasting_enabled': False,
+                'current_subject': None,
+                'max_bootstrap_samples': 50,
+                'analysis_timeout': 300,
+                'cache_version': '2.1'
+            }
+    
+    def _perform_analysis_async(self, analysis_config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Perform the actual HRV analysis in async context.
         This method runs in a separate thread and should not update GUI directly.
         
+        Args:
+            analysis_config: Analysis configuration captured from GUI in main thread
+            
         Returns:
             Dictionary with analysis results
         """
         try:
-            # Get analysis parameters
-            analysis_data = self._prepare_analysis_data()
+            # Get analysis parameters using config instead of GUI variables
+            analysis_data = self._prepare_analysis_data_from_config(analysis_config)
             if not analysis_data:
                 raise Exception("No analysis data prepared")
             
-            selected_domains = []
-            # Use the domain_vars dictionary instead of individual variables
-            for domain, var in self.domain_vars.items():
-                if var.get():
-                    selected_domains.append(domain)
-                
+            # Get selected domains from config instead of GUI
+            selected_domains = analysis_config.get('selected_domains', [])
             if not selected_domains:
                 raise Exception("No analysis domains selected")
             
@@ -1503,8 +1554,8 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                     if self.async_processor.progress_callback:
                         self.async_processor.progress_callback(f"Processing {key}...", progress_pct)
                     
-                    # Use cached analysis
-                    result = self._perform_cached_analysis(key, data_segment, selected_domains)
+                    # Use cached analysis with config
+                    result = self._perform_cached_analysis_from_config(key, data_segment, selected_domains, analysis_config)
                     
                     if result is not None:
                         all_results[key] = result
@@ -1520,12 +1571,12 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 raise Exception("No subjects could be processed successfully")
             
             # Advanced analysis if requested
-            if self.clustering_var.get():
+            if analysis_config.get('clustering_enabled', False):
                 if self.async_processor.progress_callback:
                     self.async_processor.progress_callback("Running clustering analysis...", 90)
                 self._perform_clustering_analysis(all_results)
                 
-            if self.forecasting_var.get():
+            if analysis_config.get('forecasting_enabled', False):
                 if self.async_processor.progress_callback:
                     self.async_processor.progress_callback("Running forecasting analysis...", 95)
                 self._perform_forecasting_analysis(all_results)
@@ -1539,8 +1590,14 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
     
     def _prepare_analysis_data(self) -> Optional[Dict[str, pd.DataFrame]]:
         """Prepare data for analysis based on subject selection."""
+        return self._prepare_analysis_data_from_config({'current_subject': self.current_subject})
+    
+    def _prepare_analysis_data_from_config(self, analysis_config: Dict[str, Any]) -> Optional[Dict[str, pd.DataFrame]]:
+        """Prepare data for analysis based on config (thread-safe version)."""
         try:
-            if self.current_subject == 'All' or self.current_subject is None:
+            current_subject = analysis_config.get('current_subject')
+            
+            if current_subject == 'All' or current_subject is None:
                 # Group by subject and Sol if available
                 if 'subject' in self.loaded_data.columns and 'Sol' in self.loaded_data.columns:
                     groups = self.loaded_data.groupby(['subject', 'Sol'])
@@ -1553,18 +1610,17 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             else:
                 # Single subject analysis
                 if 'subject' in self.loaded_data.columns:
-                    subject_data = self.loaded_data[self.loaded_data['subject'] == self.current_subject]
+                    subject_data = self.loaded_data[self.loaded_data['subject'] == current_subject]
                     if 'Sol' in subject_data.columns:
                         groups = subject_data.groupby('Sol')
-                        return {f"{self.current_subject}_Sol{sol}": group for sol, group in groups}
+                        return {f"{current_subject}_Sol{sol}": group for sol, group in groups}
                     else:
-                        return {self.current_subject: subject_data}
+                        return {current_subject: subject_data}
                 else:
                     return {'Selected': self.loaded_data}
                     
         except Exception as e:
             logger.error(f"Error preparing analysis data: {e}")
-            messagebox.showerror("Error", f"Error preparing data: {e}")
             return None
             
     def _perform_clustering_analysis(self, results: Dict[str, Any]):
@@ -2569,15 +2625,32 @@ Special Thanks:
         Returns:
             Analysis results dictionary or None if analysis failed
         """
+        # Capture current GUI state for legacy compatibility
+        current_config = self._capture_analysis_config()
+        return self._perform_cached_analysis_from_config(subject_key, data_segment, selected_domains, current_config)
+    
+    def _perform_cached_analysis_from_config(self, subject_key: str, data_segment: pd.DataFrame, selected_domains: List[HRVDomain], analysis_config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Perform HRV analysis with intelligent caching (thread-safe version).
+        
+        Args:
+            subject_key: Identifier for the subject/session
+            data_segment: Data for this subject/session
+            selected_domains: HRV domains to analyze
+            analysis_config: Analysis configuration from main thread
+            
+        Returns:
+            Analysis results dictionary or None if analysis failed
+        """
         try:
-            # Generate analysis configuration for cache key
-            analysis_config = {
-                'fast_mode': self.fast_mode_var.get(),
+            # Generate cache config from provided analysis config
+            cache_config = {
+                'fast_mode': analysis_config.get('fast_mode', False),
                 'selected_domains': [domain.value for domain in selected_domains],
-                'bootstrap_ci': self.bootstrap_ci_var.get() and not self.fast_mode_var.get(),
-                'max_bootstrap_samples': self.max_bootstrap_samples,
-                'analysis_timeout': self.analysis_timeout,
-                'cache_version': '2.1'  # Version for cache invalidation
+                'bootstrap_ci': analysis_config.get('bootstrap_ci', False) and not analysis_config.get('fast_mode', False),
+                'max_bootstrap_samples': analysis_config.get('max_bootstrap_samples', 50),
+                'analysis_timeout': analysis_config.get('analysis_timeout', 300),
+                'cache_version': analysis_config.get('cache_version', '2.1')
             }
             
             # Extract subject ID and session info
@@ -2592,7 +2665,7 @@ Special Thanks:
                 subject_id=subject_id,
                 session_id=subject_key,
                 data=data_segment,
-                analysis_config=analysis_config
+                analysis_config=cache_config
             )
             
             if cached_result is not None:
@@ -2615,7 +2688,7 @@ Special Thanks:
                     return None
                     
                 # HRV analysis with performance optimizations
-                include_ci = self.bootstrap_ci_var.get() and not self.fast_mode_var.get()
+                include_ci = cache_config['bootstrap_ci']
                 hrv_results = self.hrv_processor.compute_hrv_metrics(
                     rr_intervals,
                     domains=selected_domains,
@@ -2660,7 +2733,7 @@ Special Thanks:
                 subject_id=subject_id,
                 session_id=subject_key,
                 data=data_segment,
-                analysis_config=analysis_config,
+                analysis_config=cache_config,
                 result=result,
                 ttl_hours=24.0,  # 24 hour cache TTL
                 metadata=cache_metadata
