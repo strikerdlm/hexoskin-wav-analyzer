@@ -481,32 +481,215 @@ class HRVAnalysisApp:
         self.results_frame.rowconfigure(0, weight=1)
         
     def _setup_plots_tab(self):
-        """Setup the plots display tab."""
-        # Create scrollable frame for plots
-        self.plots_canvas = tk.Canvas(self.plots_frame)
-        self.plots_scrollbar = ttk.Scrollbar(self.plots_frame, orient="vertical", command=self.plots_canvas.yview)
-        self.plots_scrollable_frame = ttk.Frame(self.plots_canvas)
+        """Setup the plots display tab with embedded HTML viewer."""
+        # Try to import tkhtml or tkhtml3
+        self.html_viewer = None
+        try:
+            # Try to use built-in web browser widget if available
+            import tkinter.html as html
+            self.html_viewer = html.HTMLText(self.plots_frame)
+        except ImportError:
+            pass
         
-        self.plots_scrollable_frame.bind(
-            "<Configure>",
-            lambda e: self.plots_canvas.configure(scrollregion=self.plots_canvas.bbox("all"))
-        )
+        # If no HTML viewer available, create scrollable frame for plot controls
+        if self.html_viewer is None:
+            # Create main container with paned window for controls and display
+            self.plots_paned = ttk.PanedWindow(self.plots_frame, orient=tk.VERTICAL)
+            self.plots_paned.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+            self.plots_frame.columnconfigure(0, weight=1)
+            self.plots_frame.rowconfigure(0, weight=1)
+            
+            # Top pane: Plot controls
+            self.plots_control_frame = ttk.Frame(self.plots_paned)
+            self.plots_paned.add(self.plots_control_frame, weight=1)
+            
+            # Create scrollable frame for plot controls
+            self.plots_canvas = tk.Canvas(self.plots_control_frame)
+            self.plots_scrollbar = ttk.Scrollbar(self.plots_control_frame, orient="vertical", command=self.plots_canvas.yview)
+            self.plots_scrollable_frame = ttk.Frame(self.plots_canvas)
+            
+            self.plots_scrollable_frame.bind(
+                "<Configure>",
+                lambda e: self.plots_canvas.configure(scrollregion=self.plots_canvas.bbox("all"))
+            )
+            
+            self.plots_canvas.create_window((0, 0), window=self.plots_scrollable_frame, anchor="nw")
+            self.plots_canvas.configure(yscrollcommand=self.plots_scrollbar.set)
+            
+            # Grid the canvas and scrollbar
+            self.plots_canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+            self.plots_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+            
+            self.plots_control_frame.columnconfigure(0, weight=1)
+            self.plots_control_frame.rowconfigure(0, weight=1)
+            
+            # Bottom pane: Embedded plot display area
+            self.plot_display_area = ttk.LabelFrame(self.plots_paned, text="Plot Preview", padding="10")
+            self.plots_paned.add(self.plot_display_area, weight=3)
+            
+            # Create text area for plot preview information and instructions
+            self.plot_preview_text = scrolledtext.ScrolledText(
+                self.plot_display_area, 
+                wrap=tk.WORD, 
+                height=15,
+                font=('Courier', 10)
+            )
+            self.plot_preview_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+            self.plot_display_area.columnconfigure(0, weight=1)
+            self.plot_display_area.rowconfigure(0, weight=1)
+            
+            # Set initial content
+            self._set_plot_preview_instructions()
+        else:
+            # Use HTML viewer if available
+            self.html_viewer.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+            self.plots_frame.columnconfigure(0, weight=1)
+            self.plots_frame.rowconfigure(0, weight=1)
         
-        self.plots_canvas.create_window((0, 0), window=self.plots_scrollable_frame, anchor="nw")
-        self.plots_canvas.configure(yscrollcommand=self.plots_scrollbar.set)
-        
-        # Grid the canvas and scrollbar
-        self.plots_canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        self.plots_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
-        
-        self.plots_frame.columnconfigure(0, weight=1)
-        self.plots_frame.rowconfigure(0, weight=1)
-        
-        # Initial placeholder
+        # Initial placeholder for controls
         self.plots_placeholder = ttk.Label(self.plots_scrollable_frame, 
-                                          text="Visualizations will appear here after analysis.\nClick 'Run Analysis' to generate interactive plots.",
+                                          text="Run analysis first, then use plot controls to generate visualizations.",
                                           justify=tk.CENTER)
         self.plots_placeholder.grid(row=0, column=0, padx=20, pady=20)
+    
+    def _set_plot_preview_instructions(self):
+        """Set instructions in the plot preview area."""
+        if hasattr(self, 'plot_preview_text'):
+            instructions = """
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                          HRV VISUALIZATION CENTER                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Welcome to the Enhanced HRV Analysis Visualization System!
+
+📊 AVAILABLE PLOT TYPES:
+
+1. 🔵 POINCARÉ PLOT
+   • Shows beat-to-beat heart rate variability patterns
+   • RR(n) vs RR(n+1) scatter plot with fitted ellipse
+   • SD1 (short-term) and SD2 (long-term) variability visualization
+
+2. 📈 POWER SPECTRAL DENSITY (PSD)
+   • Frequency domain analysis of HRV
+   • Shows VLF, LF, and HF frequency bands
+   • Logarithmic power scale with band highlighting
+
+3. 📉 RR INTERVAL TIME SERIES
+   • Time-based view of heart rate variability
+   • Shows RR intervals over beat sequence
+   • Includes trend analysis and variability bands
+
+4. 🎛️  HRV DASHBOARD
+   • Comprehensive multi-panel view
+   • Combines all analysis types in one display
+   • Includes metrics summary table
+
+5. 🔗 COMBINED TIME SERIES
+   • Multi-subject comparison across SOL sessions
+   • Shows temporal trends for all HRV metrics
+   • Comparative analysis of crew members
+
+🎯 INSTRUCTIONS:
+
+1. First, run an HRV analysis using the "Analysis Controls" tab
+2. Once analysis is complete, return to this "Visualizations" tab
+3. Select a subject from the dropdown menu
+4. Click any plot generation button above
+5. Generated plots will open in your web browser
+6. Plot files are also saved locally for future reference
+
+💡 TIPS:
+
+• All plots are fully interactive (zoom, pan, hover for details)
+• HTML files can be shared or included in reports
+• Plots automatically open in your default web browser
+• Use "Generate All Plots" for complete visualization set
+
+Ready to visualize your HRV analysis results! 🚀
+
+"""
+            self.plot_preview_text.delete(1.0, tk.END)
+            self.plot_preview_text.insert(1.0, instructions)
+    
+    def _update_plot_preview(self, plot_type, subject, file_path, rr_intervals):
+        """Update the plot preview area with plot information."""
+        if hasattr(self, 'plot_preview_text'):
+            preview_text = f"""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                           PLOT GENERATED SUCCESSFULLY                         ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+🎯 PLOT TYPE: {plot_type}
+👤 SUBJECT: {subject}
+📊 DATA POINTS: {len(rr_intervals)} RR intervals
+
+📁 FILE DETAILS:
+   • File: {file_path.name}
+   • Location: {file_path.parent.absolute()}
+   • Full Path: {file_path.absolute()}
+
+🌐 BROWSER STATUS:
+   • Plot automatically opened in default web browser
+   • Interactive features available (zoom, pan, hover)
+   • Full-screen responsive design
+
+📋 PLOT FEATURES:
+"""
+
+            if plot_type == "Poincaré Plot":
+                preview_text += """   • RR(n) vs RR(n+1) scatter plot
+   • Fitted ellipse showing variability distribution
+   • SD1 (short-term) and SD2 (long-term) measures
+   • Color-coded time progression option
+   • Individual beat hover information
+"""
+
+            elif plot_type == "Power Spectral Density":
+                preview_text += """   • Frequency domain analysis
+   • VLF, LF, and HF band highlighting
+   • Logarithmic power scale
+   • Interactive frequency band exploration
+   • Power values on hover
+"""
+
+            elif plot_type == "RR Interval Time Series":
+                preview_text += """   • Time-based RR interval progression
+   • Beat-by-beat variability visualization
+   • Optional trend line analysis
+   • Variability bands display
+   • Temporal pattern identification
+"""
+
+            elif plot_type == "HRV Dashboard":
+                preview_text += """   • Multi-panel comprehensive view
+   • All plot types in one display
+   • HRV metrics summary table
+   • Frequency band distribution
+   • Time vs frequency domain comparison
+"""
+
+            preview_text += f"""
+
+💡 USAGE TIPS:
+   • Use mouse wheel to zoom in/out
+   • Click and drag to pan around the plot
+   • Hover over data points for detailed information
+   • Use toolbar buttons for additional features
+   • Double-click to reset zoom
+   
+📤 SHARING:
+   • HTML file can be emailed or shared
+   • Works in any modern web browser
+   • No additional software required for viewing
+   • Preserves all interactive features
+
+✅ Plot generation completed successfully!
+Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+"""
+            
+            self.plot_preview_text.delete(1.0, tk.END)
+            self.plot_preview_text.insert(1.0, preview_text)
         
     def _setup_stats_tab(self):
         """Setup the statistics display tab."""
@@ -2112,9 +2295,12 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         
         # Restore placeholder
         self.plots_placeholder = ttk.Label(self.plots_scrollable_frame, 
-                                          text="Visualizations will appear here after analysis.\nClick 'Run Analysis' to generate interactive plots.",
+                                          text="Run analysis first, then use plot controls to generate visualizations.",
                                           justify=tk.CENTER)
         self.plots_placeholder.grid(row=0, column=0, padx=20, pady=20)
+        
+        # Restore instructions in preview area
+        self._set_plot_preview_instructions()
     
     def _clear_plot_buttons(self):
         """Clear existing plot buttons to avoid overlap."""
@@ -2153,22 +2339,36 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             # Save plot with unique filename
             safe_subject = selected_subject.replace('/', '_').replace('\\', '_')
             plot_path = Path(f"poincare_plot_{safe_subject}.html")
-            self.interactive_plotter.export_html(fig, str(plot_path))
+            export_success = self.interactive_plotter.export_html(fig, str(plot_path))
             
-            # Update status with success message and instructions
-            success_text = f"✅ Poincaré plot generated for {selected_subject}\n\n"
-            success_text += f"Plot saved as: {plot_path.absolute()}\n\n"
-            success_text += "• SD1 (short-term variability) vs SD2 (long-term variability)\n"
-            success_text += "• Each point represents consecutive RR intervals\n"
-            success_text += "• Ellipse shows distribution pattern\n\n"
-            success_text += "Open the HTML file in your browser to view the interactive plot."
-            
-            self.plot_status_label.configure(text=success_text)
-            
-            # Add button to open plot
-            open_button = ttk.Button(self.plot_display_frame, text="Open Poincaré Plot",
-                                   command=lambda: self._open_plot_file(plot_path))
-            open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
+            if export_success:
+                # Update status with success message
+                success_text = f"✅ Poincaré plot generated for {selected_subject}\n\n"
+                success_text += f"📁 Plot saved as: {plot_path.absolute()}\n\n"
+                success_text += "📊 Plot details:\n"
+                success_text += "• SD1 (short-term variability) vs SD2 (long-term variability)\n"
+                success_text += "• Each point represents consecutive RR intervals\n"
+                success_text += "• Ellipse shows distribution pattern\n"
+                success_text += f"• Total RR intervals: {len(rr_intervals)}\n\n"
+                success_text += "🌐 The plot has been automatically opened in your browser."
+                
+                self.plot_status_label.configure(text=success_text)
+                
+                # Update plot preview area
+                self._update_plot_preview("Poincaré Plot", selected_subject, plot_path, rr_intervals)
+                
+                # Add button to open plot
+                open_button = ttk.Button(self.plot_display_frame, text="🌐 Open in Browser",
+                                       command=lambda: self._open_plot_file(plot_path))
+                open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
+                
+                # Automatically open the plot
+                self._open_plot_file(plot_path)
+                
+            else:
+                error_text = f"❌ Failed to generate Poincaré plot for {selected_subject}\n"
+                error_text += "Check the log file for details."
+                self.plot_status_label.configure(text=error_text)
             
         except Exception as e:
             logger.error(f"Error generating Poincaré plot: {e}")
@@ -2205,23 +2405,36 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             # Save plot with unique filename
             safe_subject = selected_subject.replace('/', '_').replace('\\', '_')
             plot_path = Path(f"psd_plot_{safe_subject}.html")
-            self.interactive_plotter.export_html(fig, str(plot_path))
+            export_success = self.interactive_plotter.export_html(fig, str(plot_path))
             
-            # Update status
-            success_text = f"✅ Power Spectral Density plot generated for {selected_subject}\n\n"
-            success_text += f"Plot saved as: {plot_path.absolute()}\n\n"
-            success_text += "Frequency bands:\n"
-            success_text += "• VLF: 0.003-0.04 Hz (Very Low Frequency)\n"
-            success_text += "• LF: 0.04-0.15 Hz (Low Frequency)\n"
-            success_text += "• HF: 0.15-0.4 Hz (High Frequency)\n\n"
-            success_text += "Open the HTML file in your browser to view the interactive plot."
-            
-            self.plot_status_label.configure(text=success_text)
-            
-            # Add button to open plot
-            open_button = ttk.Button(self.plot_display_frame, text="Open PSD Plot",
-                                   command=lambda: self._open_plot_file(plot_path))
-            open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
+            if export_success:
+                # Update status
+                success_text = f"✅ Power Spectral Density plot generated for {selected_subject}\n\n"
+                success_text += f"📁 Plot saved as: {plot_path.absolute()}\n\n"
+                success_text += "📊 Frequency bands analyzed:\n"
+                success_text += "• VLF: 0.003-0.04 Hz (Very Low Frequency)\n"
+                success_text += "• LF: 0.04-0.15 Hz (Low Frequency)\n"
+                success_text += "• HF: 0.15-0.4 Hz (High Frequency)\n"
+                success_text += f"• Total RR intervals: {len(rr_intervals)}\n\n"
+                success_text += "🌐 The plot has been automatically opened in your browser."
+                
+                self.plot_status_label.configure(text=success_text)
+                
+                # Update plot preview area
+                self._update_plot_preview("Power Spectral Density", selected_subject, plot_path, rr_intervals)
+                
+                # Add button to open plot
+                open_button = ttk.Button(self.plot_display_frame, text="🌐 Open in Browser",
+                                       command=lambda: self._open_plot_file(plot_path))
+                open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
+                
+                # Automatically open the plot
+                self._open_plot_file(plot_path)
+                
+            else:
+                error_text = f"❌ Failed to generate PSD plot for {selected_subject}\n"
+                error_text += "Check the log file for details."
+                self.plot_status_label.configure(text=error_text)
             
         except Exception as e:
             logger.error(f"Error generating PSD plot: {e}")
@@ -2258,23 +2471,36 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             # Save plot with unique filename
             safe_subject = selected_subject.replace('/', '_').replace('\\', '_')
             plot_path = Path(f"timeseries_plot_{safe_subject}.html")
-            self.interactive_plotter.export_html(fig, str(plot_path))
+            export_success = self.interactive_plotter.export_html(fig, str(plot_path))
             
-            # Update status
-            success_text = f"✅ RR interval time series plot generated for {selected_subject}\n\n"
-            success_text += f"Plot saved as: {plot_path.absolute()}\n\n"
-            success_text += "Shows:\n"
-            success_text += "• RR interval values over time\n"
-            success_text += "• Heart rate variability patterns\n"
-            success_text += "• Trend analysis if enabled\n\n"
-            success_text += "Open the HTML file in your browser to view the interactive plot."
-            
-            self.plot_status_label.configure(text=success_text)
-            
-            # Add button to open plot
-            open_button = ttk.Button(self.plot_display_frame, text="Open Time Series Plot",
-                                   command=lambda: self._open_plot_file(plot_path))
-            open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
+            if export_success:
+                # Update status
+                success_text = f"✅ RR interval time series plot generated for {selected_subject}\n\n"
+                success_text += f"📁 Plot saved as: {plot_path.absolute()}\n\n"
+                success_text += "📊 Visualization features:\n"
+                success_text += "• RR interval values over beat sequence\n"
+                success_text += "• Heart rate variability patterns\n"
+                success_text += "• Trend analysis and variability bands\n"
+                success_text += f"• Total RR intervals: {len(rr_intervals)}\n\n"
+                success_text += "🌐 The plot has been automatically opened in your browser."
+                
+                self.plot_status_label.configure(text=success_text)
+                
+                # Update plot preview area
+                self._update_plot_preview("RR Interval Time Series", selected_subject, plot_path, rr_intervals)
+                
+                # Add button to open plot
+                open_button = ttk.Button(self.plot_display_frame, text="🌐 Open in Browser",
+                                       command=lambda: self._open_plot_file(plot_path))
+                open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
+                
+                # Automatically open the plot
+                self._open_plot_file(plot_path)
+                
+            else:
+                error_text = f"❌ Failed to generate time series plot for {selected_subject}\n"
+                error_text += "Check the log file for details."
+                self.plot_status_label.configure(text=error_text)
             
         except Exception as e:
             logger.error(f"Error generating time series plot: {e}")
