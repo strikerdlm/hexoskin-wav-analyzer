@@ -407,10 +407,20 @@ class HRVAnalysisApp:
         self.async_status_label.grid(row=0, column=0, sticky=tk.W)
         
         # Progress details
-        self.progress_details_var = tk.StringVar(value="Waiting for analysis...")
+        self.progress_details_var = tk.StringVar(value="Ready to start analysis...")
         self.progress_details_label = ttk.Label(status_frame, textvariable=self.progress_details_var,
                                               style='Caption.TLabel')
         self.progress_details_label.grid(row=1, column=0, sticky=tk.W)
+        
+        # Overall progress display
+        overall_frame = ttk.Frame(status_frame)
+        overall_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(5, 0))
+        
+        ttk.Label(overall_frame, text="Overall Progress:", font=('Arial', 8, 'bold')).grid(row=0, column=0, sticky=tk.W)
+        self.overall_progress_var = tk.StringVar(value="0/0 subjects completed")
+        self.overall_progress_label = ttk.Label(overall_frame, textvariable=self.overall_progress_var,
+                                               font=('Arial', 8), foreground='blue')
+        self.overall_progress_label.grid(row=0, column=1, sticky=tk.W, padx=(10, 0))
         
         # Clear button
         ttk.Button(control_frame, text="Clear Results", 
@@ -1505,12 +1515,15 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             logger.info(f"Starting simple analysis of {len(analysis_data)} subjects")
             self._update_status("Starting simple analysis...")
             self._update_progress(5, "Processing subjects...")
+            self.overall_progress_var.set(f"0/{len(analysis_data)} subjects completed")
             
             # Process each subject synchronously
             all_results = {}
             total_subjects = len(analysis_data)
+            completed_subjects = 0
             
             for i, (key, data_segment) in enumerate(analysis_data.items()):
+                current_subject = i + 1  # Track current subject number
                 try:
                     # Update progress with domain information
                     progress_pct = (i / total_subjects) * 85 + 10  # 10-95% range
@@ -1530,25 +1543,53 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                     self.root.update_idletasks()  # Allow GUI to update
                     
                     # Additional GUI updates during processing
-                    for _ in range(3):  # Multiple updates to keep GUI responsive
+                    for update_cycle in range(5):  # More frequent updates
                         self.root.update()
                         import time
-                        time.sleep(0.1)  # Small delay to process GUI events
+                        time.sleep(0.05)  # Shorter delay for more responsive updates
+                        
+                        # Show preparation progress
+                        prep_progress = (update_cycle / 5) * 5  # 0-5% for preparation
+                        self._update_progress(progress_pct + prep_progress, f"Preparing {key} for analysis...")
+                        self.async_status_var.set(f"🔄 Preparing {key} (step {update_cycle + 1}/5)")
                     
-                    # Use cached analysis (this is now thread-safe)
-                    result = self._perform_cached_analysis_from_config(key, data_segment, selected_domains, analysis_config)
+                    # Use cached analysis with progress callback
+                    def progress_callback(step_name, step_progress):
+                        # Update progress for current subject
+                        subject_progress = (i / total_subjects) * 85 + 10  # Base progress
+                        detailed_progress = subject_progress + (step_progress / total_subjects) * 0.8  # Add step progress
+                        
+                        status_message = f"Processing {key}: {step_name} ({step_progress:.0f}%)"
+                        if has_nonlinear:
+                            status_message += " ⚠️ NONLINEAR - May take time"
+                        
+                        self._update_progress(detailed_progress, status_message)
+                        self.async_status_var.set(f"🔄 {key}: {step_name}")
+                        
+                        # Force GUI update
+                        self.root.update_idletasks()
+                        self.root.update()
+                    
+                    result = self._perform_cached_analysis_from_config_with_progress(
+                        key, data_segment, selected_domains, analysis_config, progress_callback)
                     
                     if result is not None:
                         all_results[key] = result
+                        completed_subjects += 1
                         logger.info(f"Simple: Successfully processed {key}")
                         self.async_status_var.set(f"✅ Completed {key}")
+                        self.overall_progress_var.set(f"{completed_subjects}/{total_subjects} subjects completed")
                     else:
                         logger.warning(f"Simple: Failed to process {key}")
                         self.async_status_var.set(f"❌ Failed {key}")
                     
+                    # Update overall progress display
+                    self.progress_details_var.set(f"Subject {i+1} of {total_subjects}: {key}")
+                    
                 except Exception as e:
                     logger.error(f"Simple: Error processing {key}: {e}")
                     self.async_status_var.set(f"❌ Error processing {key}: {str(e)[:50]}...")
+                    self.progress_details_var.set(f"Error on subject {i+1}: {key}")
                     # Continue with next subject instead of stopping entire analysis
                     self.root.update_idletasks()  # Keep GUI responsive
                     continue
@@ -1568,12 +1609,18 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             
             # Complete
             self._update_progress(100, "Analysis complete!")
+            self.async_status_var.set(f"🎉 Analysis Complete! {len(all_results)} subjects processed")
             logger.info(f"Simple analysis completed: {len(all_results)} subjects processed")
+            
+            # Final GUI update
+            self.root.update_idletasks()
+            self.root.update()
             
             messagebox.showinfo("Success", f"HRV analysis completed successfully!\n\n" +
                               f"✅ {len(all_results)} subjects processed\n" +
-                              f"✅ All HRV domains computed\n" +
-                              f"✅ Results ready for visualization")
+                              f"✅ All requested HRV domains computed\n" +
+                              f"✅ Results ready for visualization\n" +
+                              f"✅ Real-time progress tracking worked!")
             
         except Exception as e:
             logger.error(f"Error in simple analysis: {e}")
@@ -2910,6 +2957,194 @@ Special Thanks:
         except Exception as e:
             logger.error(f"Error in cached analysis for {subject_key}: {e}")
             return None
+    
+    def _perform_cached_analysis_from_config_with_progress(self, subject_key: str, data_segment: pd.DataFrame, 
+                                                          selected_domains: List[HRVDomain], analysis_config: Dict[str, Any], 
+                                                          progress_callback) -> Optional[Dict[str, Any]]:
+        """
+        Perform HRV analysis with progress callback for GUI updates.
+        
+        Args:
+            subject_key: Identifier for the subject/session
+            data_segment: Data for this subject/session
+            selected_domains: HRV domains to analyze
+            analysis_config: Analysis configuration from main thread
+            progress_callback: Function to call with progress updates (step_name, percentage)
+            
+        Returns:
+            Analysis results dictionary or None if analysis failed
+        """
+        try:
+            progress_callback("Starting analysis", 0)
+            
+            # Generate cache config from provided analysis config
+            cache_config = {
+                'fast_mode': analysis_config.get('fast_mode', False),
+                'selected_domains': [domain.value for domain in selected_domains],
+                'bootstrap_ci': analysis_config.get('bootstrap_ci', False) and not analysis_config.get('fast_mode', False),
+                'max_bootstrap_samples': analysis_config.get('max_bootstrap_samples', 50),
+                'analysis_timeout': analysis_config.get('analysis_timeout', 300),
+                'cache_version': analysis_config.get('cache_version', '2.1')
+            }
+            
+            # Extract subject ID and session info
+            if '_Sol' in subject_key:
+                subject_id = subject_key.split('_Sol')[0]
+            else:
+                subject_id = subject_key
+            
+            progress_callback("Checking cache", 5)
+            
+            # Check cache first  
+            cached_result = self.results_cache.get(
+                subject_id=subject_id,
+                session_id=subject_key,
+                data=data_segment,
+                analysis_config=cache_config
+            )
+            
+            if cached_result is not None:
+                progress_callback("Using cached results", 100)
+                logger.info(f"🚀 Cache HIT: Using cached results for {subject_key}")
+                return cached_result
+            
+            progress_callback("Processing heart rate data", 10)
+            logger.info(f"💾 Cache MISS: Computing fresh analysis for {subject_key}")
+            
+            # CRITICAL FIX: Smart memory management
+            hr_data = data_segment['heart_rate [bpm]']
+            hr_data = self._apply_memory_protection(hr_data, subject_key)
+            
+            progress_callback("Computing RR intervals", 20)
+            
+            # Signal processing
+            rr_intervals, processing_info = self.signal_processor.compute_rr_intervals(hr_data)
+            
+            if len(rr_intervals) < 50:
+                logger.warning(f"Insufficient RR intervals for {subject_key}: {len(rr_intervals)}")
+                progress_callback("Insufficient data", 100)
+                return None
+            
+            progress_callback("Starting HRV calculations", 30)
+            
+            # HRV analysis with progress updates
+            include_ci = cache_config['bootstrap_ci']
+            
+            # Create a progress-aware HRV processor call
+            def hrv_progress_callback(domain_name, domain_progress):
+                # Map domain progress to overall progress (30-95%)
+                overall_progress = 30 + (domain_progress * 0.65)
+                progress_callback(f"Computing {domain_name} metrics", overall_progress)
+            
+            # Call HRV processor with progress updates
+            hrv_results = self._compute_hrv_with_progress(
+                rr_intervals, selected_domains, include_ci, hrv_progress_callback)
+            
+            progress_callback("Finalizing results", 95)
+            
+            result = {
+                'rr_intervals': rr_intervals,
+                'processing_info': processing_info,
+                'hrv_results': hrv_results,
+                'data_info': {
+                    'original_samples': len(data_segment),
+                    'processed_samples': len(hr_data),
+                    'rr_intervals_count': len(rr_intervals)
+                },
+                'subject_key': subject_key
+            }
+            
+            # Cache the result for future use
+            cache_metadata = {
+                'analysis_timestamp': datetime.now().isoformat(),
+                'original_samples': result['data_info']['original_samples'],
+                'processed_samples': result['data_info']['processed_samples'],
+                'rr_intervals': result['data_info']['rr_intervals_count'],
+                'domains_analyzed': [domain.value for domain in selected_domains]
+            }
+            
+            cache_success = self.results_cache.put(
+                subject_id=subject_id,
+                session_id=subject_key,
+                data=data_segment,
+                analysis_config=cache_config,
+                result=result,
+                ttl_hours=24.0,  # 24 hour cache TTL
+                metadata=cache_metadata
+            )
+            
+            progress_callback("Complete", 100)
+            
+            if cache_success:
+                logger.info(f"✅ Successfully cached results for {subject_key}")
+            else:
+                logger.warning(f"⚠️ Failed to cache results for {subject_key}")
+            
+            return result
+            
+        except Exception as e:
+            progress_callback(f"Error: {str(e)[:20]}...", 100)
+            logger.error(f"Error in cached analysis for {subject_key}: {e}")
+            return None
+    
+    def _compute_hrv_with_progress(self, rr_intervals, selected_domains, include_ci, progress_callback):
+        """Compute HRV metrics with progress updates."""
+        try:
+            results = {}
+            total_domains = len(selected_domains)
+            
+            for i, domain in enumerate(selected_domains):
+                domain_progress_start = (i / total_domains) * 100
+                domain_progress_end = ((i + 1) / total_domains) * 100
+                
+                # Update progress for this domain
+                progress_callback(domain.value, domain_progress_start)
+                
+                # Force GUI update before expensive computation
+                self.root.update_idletasks()
+                self.root.update()
+                
+                # Compute this domain's metrics
+                try:
+                    if domain == HRVDomain.NONLINEAR:
+                        # Nonlinear is slow - update progress more frequently
+                        progress_callback("Nonlinear (DFA)", domain_progress_start + 10)
+                        self.root.update_idletasks()
+                        self.root.update()
+                        
+                        progress_callback("Nonlinear (Entropy)", domain_progress_start + 30)
+                        self.root.update_idletasks()
+                        self.root.update()
+                        
+                    # Use timeout for individual domain computation
+                    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+                    with ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(
+                            self.hrv_processor.compute_hrv_metrics,
+                            rr_intervals,
+                            domains=[domain],
+                            include_confidence_intervals=include_ci
+                        )
+                        
+                        # Different timeout for different domains
+                        timeout = 60 if domain == HRVDomain.NONLINEAR else 15
+                        domain_result = future.result(timeout=timeout)
+                        
+                        if domain_result and domain.value in domain_result:
+                            results[domain.value] = domain_result[domain.value]
+                            
+                except (FutureTimeoutError, Exception) as e:
+                    logger.warning(f"Timeout or error computing {domain.value}: {e}")
+                    # Continue with other domains
+                    
+                # Update progress for completed domain
+                progress_callback(domain.value, domain_progress_end)
+                
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error in HRV computation with progress: {e}")
+            return {}
     
     def _get_cache_status_info(self) -> Dict[str, Any]:
         """Get current cache statistics for display."""
