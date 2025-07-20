@@ -179,6 +179,12 @@ def main():
             safe_print("[OK] Memory Protection: Limits extremely large datasets")
             safe_print("[OK] Data Limiting: Available as option if needed")
             safe_print("="*60)
+            safe_print("⚠️  PROCESSING TIME NOTICE:")
+            safe_print("   • Time/Frequency Analysis: Fast (< 30 seconds)")
+            safe_print("   • Nonlinear Analysis: May take several minutes")
+            safe_print("     (DFA, entropy calculations are computationally intensive)")
+            safe_print("   • Monitor progress via GUI status and progress bar")
+            safe_print("="*60)
             safe_print("Ready to analyze ALL Valquiria subjects!")
             safe_print("="*60 + "\n")
             

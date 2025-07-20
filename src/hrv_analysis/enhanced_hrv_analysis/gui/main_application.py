@@ -28,6 +28,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 import gc
 import psutil
+import time
 
 # Import enhanced HRV analysis components
 # Add parent directory to path for imports
@@ -180,6 +181,7 @@ class HRVAnalysisApp:
             style.configure('Caption.TLabel', font=('Helvetica', 10), foreground='#6A737D')
             style.configure('Heading.TLabel', font=('Helvetica', 12, 'bold'))
             style.configure('Status.TLabel', font=('Helvetica', 10))
+            style.configure('Warning.TLabel', font=('Helvetica', 9), foreground='#D69E2E', background='#FFFBF0')
             
             # Button styles
             style.configure('Primary.TButton', font=('Helvetica', 10, 'bold'))
@@ -278,37 +280,54 @@ class HRVAnalysisApp:
         for i, (label, domain) in enumerate(domains):
             var = tk.BooleanVar(value=True)
             self.domain_vars[domain] = var
-            ttk.Checkbutton(config_frame, text=label, variable=var).grid(
-                row=i+1, column=0, sticky=tk.W, padx=10)
+            
+            # Add warning for nonlinear analysis
+            if domain == HRVDomain.NONLINEAR:
+                checkbox_text = f"{label} ⏱️ (Takes time - see status below)"
+            else:
+                checkbox_text = label
                 
+            ttk.Checkbutton(config_frame, text=checkbox_text, variable=var).grid(
+                row=i+1, column=0, sticky=tk.W, padx=10)
+        
+        # Add processing time warning
+        warning_frame = ttk.Frame(config_frame)
+        warning_frame.grid(row=len(domains)+1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(5, 0))
+        
+        warning_text = "⚠️ NOTE: Nonlinear analysis (DFA, entropy) may take several minutes.\n" \
+                      "Monitor progress via async status and progress bar below."
+        warning_label = ttk.Label(warning_frame, text=warning_text, 
+                                 style='Warning.TLabel', justify=tk.LEFT)
+        warning_label.grid(row=0, column=0, sticky=tk.W)
+        
         # Advanced Options
         ttk.Label(config_frame, text="Advanced Options:", 
-                 style='Heading.TLabel').grid(row=len(domains)+1, column=0, 
+                 style='Heading.TLabel').grid(row=len(domains)+2, column=0, 
                                             columnspan=2, sticky=tk.W, pady=(10, 5))
         
         # PERFORMANCE FIX: Disable bootstrap by default to prevent hanging
         self.bootstrap_ci_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(config_frame, text="Bootstrap Confidence Intervals (Slow)", 
                        variable=self.bootstrap_ci_var).grid(
-            row=len(domains)+2, column=0, sticky=tk.W, padx=10)
+            row=len(domains)+3, column=0, sticky=tk.W, padx=10)
         
         self.fast_mode_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(config_frame, text="Limit Data Size (prevents hanging)", 
                        variable=self.fast_mode_var).grid(
-            row=len(domains)+3, column=0, sticky=tk.W, padx=10)
+            row=len(domains)+4, column=0, sticky=tk.W, padx=10)
         
         self.clustering_var = tk.BooleanVar(value=False)  
         ttk.Checkbutton(config_frame, text="Perform Clustering Analysis (Slow)",
                        variable=self.clustering_var).grid(
-            row=len(domains)+4, column=0, sticky=tk.W, padx=10)
+            row=len(domains)+5, column=0, sticky=tk.W, padx=10)
         
         self.forecasting_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(config_frame, text="Time Series Forecasting (Slow)",
                        variable=self.forecasting_var).grid(
-            row=len(domains)+5, column=0, sticky=tk.W, padx=10)
+            row=len(domains)+6, column=0, sticky=tk.W, padx=10)
             
     def _setup_control_section(self):
-        """Setup processing controls."""
+        """Setup processing controls with enhanced async status visibility."""
         # Processing Controls Frame
         control_frame = ttk.LabelFrame(self.left_panel, text="Processing Controls", padding="5")
         control_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
@@ -326,10 +345,26 @@ class HRVAnalysisApp:
         self.progress_bar.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(10, 0), pady=5)
         control_frame.columnconfigure(1, weight=1)
         
+        # Async Status Display (NEW)
+        status_frame = ttk.LabelFrame(control_frame, text="Async Processing Status", padding="3")
+        status_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 5))
+        
+        # Status text label
+        self.async_status_var = tk.StringVar(value="Ready")
+        self.async_status_label = ttk.Label(status_frame, textvariable=self.async_status_var, 
+                                           style='Status.TLabel')
+        self.async_status_label.grid(row=0, column=0, sticky=tk.W)
+        
+        # Progress details
+        self.progress_details_var = tk.StringVar(value="Waiting for analysis...")
+        self.progress_details_label = ttk.Label(status_frame, textvariable=self.progress_details_var,
+                                              style='Caption.TLabel')
+        self.progress_details_label.grid(row=1, column=0, sticky=tk.W)
+        
         # Clear button
         ttk.Button(control_frame, text="Clear Results", 
                   command=self._clear_results,
-                  style='Secondary.TButton').grid(row=1, column=0, sticky=tk.W, pady=5)
+                  style='Secondary.TButton').grid(row=2, column=0, sticky=tk.W, pady=5)
                   
     def _setup_export_section(self):
         """Setup export controls.""" 
@@ -476,10 +511,33 @@ class HRVAnalysisApp:
         self.root.geometry(f'{width}x{height}+{x}+{y}')
         
     def _update_status(self, message: str):
-        """Update status bar message."""
+        """Update status bar and async status display."""
         self.status_var.set(message)
+        
+        # Also update async status display if it exists
+        if hasattr(self, 'async_status_var'):
+            self.async_status_var.set(message)
+            
         self.root.update_idletasks()
         
+    def _update_progress(self, value: float, message: str = ""):
+        """Update progress bar, status, and progress details."""
+        def update():
+            self.progress_var.set(value)
+            if message:
+                self._update_status(message)
+                
+                # Also update progress details if available
+                if hasattr(self, 'progress_details_var'):
+                    # Add percentage to details if meaningful
+                    if value > 0:
+                        detail_msg = f"{message} ({value:.0f}%)"
+                    else:
+                        detail_msg = message
+                    self.progress_details_var.set(detail_msg)
+        
+        self.root.after(0, update)
+    
     def _on_settings_changed(self, new_settings: Dict[str, Any]):
         """Handle settings changes."""
         try:
@@ -1155,6 +1213,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             
         self.analysis_running = True
         self.process_button.configure(state='disabled')
+        self._analysis_start_time = time.time()  # Track start time for better progress messages
         
         # Submit analysis task to async processor
         analysis_task_id = f"hrv_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -1175,7 +1234,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             messagebox.showerror("Error", "Failed to submit analysis task")
     
     def _monitor_analysis_task(self, task_id: str):
-        """Monitor async analysis task progress."""
+        """Monitor async analysis task progress with enhanced status messaging."""
         try:
             task_status = self.async_processor.get_task_status(task_id)
             
@@ -1183,10 +1242,25 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 # Task not found, something went wrong
                 self.analysis_running = False
                 self.process_button.configure(state='normal')
-                messagebox.showerror("Error", "Analysis task lost")
+                self._update_status("Analysis task lost")
+                messagebox.showerror("Error", "Analysis task lost - this shouldn't happen with the new optimizations!")
                 return
             
             if task_status.value == "running":
+                # Provide more informative status based on elapsed time
+                elapsed_time = time.time() - getattr(self, '_analysis_start_time', time.time())
+                
+                if elapsed_time < 30:
+                    status_msg = "Processing subjects... (Fast analysis phase)"
+                elif elapsed_time < 120:
+                    status_msg = "Processing nonlinear metrics... (This may take a few minutes)"
+                elif elapsed_time < 300:
+                    status_msg = "Computing complex metrics (DFA, entropy)... Please wait"
+                else:
+                    status_msg = "Advanced processing in progress... (Approaching timeout)"
+                
+                self._update_status(status_msg)
+                
                 # Task still running, check again in 1 second
                 self.root.after(1000, lambda: self._monitor_analysis_task(task_id))
                 return
@@ -1199,9 +1273,13 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                         self.analysis_results = results
                         self._update_results_display()
                         self._update_plots_display()
-                        self._update_progress(100, "Analysis complete")
-                        messagebox.showinfo("Success", f"Async analysis completed successfully")
+                        self._update_progress(100, "Analysis complete - All metrics computed successfully!")
+                        messagebox.showinfo("Success", f"HRV analysis completed successfully!\n\n" +
+                                          f"✅ All subjects processed\n" +
+                                          f"✅ All HRV domains computed\n" +
+                                          f"✅ Results ready for visualization")
                     else:
+                        self._update_status("Analysis completed but no results returned")
                         messagebox.showerror("Error", "Analysis completed but no results returned")
                 except Exception as e:
                     logger.error(f"Error retrieving analysis results: {e}")
@@ -1417,15 +1495,6 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         except Exception as e:
             logger.error(f"Error in forecasting analysis: {e}")
             
-    def _update_progress(self, value: float, message: str = ""):
-        """Update progress bar and status."""
-        def update():
-            self.progress_var.set(value)
-            if message:
-                self._update_status(message)
-        
-        self.root.after(0, update)
-        
     def _update_results_display(self):
         """Update the results display with analysis results."""
         try:

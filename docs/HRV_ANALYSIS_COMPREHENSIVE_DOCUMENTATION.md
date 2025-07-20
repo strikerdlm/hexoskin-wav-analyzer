@@ -73,9 +73,26 @@ python launch_hrv_analysis.py
 - Added `_compute_approximate_entropy_optimized()` with vectorized operations
 - Enhanced `SafeAsyncProcessor` with better task state management
 - Implemented automatic cleanup of old completed tasks (max 50)
-- **Added optional data size limiting mode**
 
-**Performance Impact:** Analysis time reduced from indefinite hangs to 2-5 minutes maximum
+### **🚀 PROBLEM 3: Processing Time Warnings & Status Visibility**
+*Enhanced: 2025-01-14 00:00:00 UTC*
+
+**ENHANCEMENT:** Added comprehensive processing time warnings and async status visibility to better inform users:
+
+**✅ NEW FEATURES:**
+- **Processing Time Warnings**: Clear indication that nonlinear analysis takes time
+- **Enhanced Async Status Display**: Dedicated status panel in GUI showing real-time progress
+- **Progressive Status Messages**: Different messages based on analysis phase and elapsed time
+- **Startup Time Notices**: Launch script now explains expected processing times
+- **Visual Indicators**: Warning icons and colored text for time-intensive operations
+
+**TECHNICAL IMPROVEMENTS:**
+- Added "⏱️ (Takes time - see status below)" to nonlinear analysis checkbox
+- New `Async Processing Status` panel with real-time updates
+- Enhanced progress tracking with percentage and detailed messages  
+- Time-based status messages (0-30s: Fast phase, 30-120s: Nonlinear phase, etc.)
+- Startup warnings about DFA and entropy computation complexity
+- Better task monitoring with informative completion messages
 
 ### **❌ PROBLEM 2: Only Analyzing 3 Subjects Instead of All 8**
 *Fixed: 2025-07-20 12:44:17 UTC*
