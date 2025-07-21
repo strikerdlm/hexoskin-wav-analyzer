@@ -725,8 +725,7 @@ Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         # Tools menu
         tools_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Tools", menu=tools_menu)
-        tools_menu.add_command(label="Settings...", command=self.settings_panel.show_settings_dialog)
-        tools_menu.add_separator()
+        # Removed Settings menu item - was causing errors and showing no values
         tools_menu.add_command(label="Performance Monitor", command=self._toggle_performance_monitor)
         tools_menu.add_command(label="Clear Cache", command=self._clear_cache)
         
@@ -2234,6 +2233,8 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             logger.info("Updating plots display...")
             if not self.analysis_results:
                 logger.warning("No analysis results available for plots display")
+                # Still create the interface but with disabled state
+                self._create_disabled_plot_interface()
                 return
                 
             # Clear existing plots
@@ -2241,97 +2242,240 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             
             logger.info(f"Creating plot controls for {len(self.analysis_results)} results")
             
+            # Ensure the plots scrollable frame exists
+            if not hasattr(self, 'plots_scrollable_frame') or self.plots_scrollable_frame is None:
+                logger.error("plots_scrollable_frame not found! Attempting to recreate...")
+                self._setup_plots_tab()  # Recreate the plots tab
+            
             # Create plot control interface
             main_frame = ttk.Frame(self.plots_scrollable_frame)
             main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=10, pady=10)
             
-            # Title
-            title_label = ttk.Label(main_frame, text="HRV Visualizations", style='Heading.TLabel')
+            # Title with emphasis
+            title_label = ttk.Label(main_frame, text="📊 HRV VISUALIZATIONS READY", 
+                                   style='Title.TLabel')
             title_label.grid(row=0, column=0, columnspan=2, pady=(0, 10), sticky=tk.W)
             
             # Count subjects processed
             subject_count = len([k for k in self.analysis_results.keys() if k not in ['clustering', 'forecasting']])
             
-            info_text = f"Analysis complete for {subject_count} subjects/sessions.\n"
-            info_text += "Click buttons below to generate and view plots.\n\n"
-            info_text += "Available visualizations:\n"
-            info_text += "• Poincaré plots (RR interval scatter plots)\n"
-            info_text += "• Power Spectral Density (frequency analysis)\n"
-            info_text += "• RR interval time series\n"
-            info_text += "• HRV metrics summary charts\n"
-            info_text += "• Combined Time Series (all subjects, all HRV metrics across SOL sessions)"
+            # Success message
+            success_frame = ttk.Frame(main_frame)
+            success_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 15))
+            success_frame.configure(relief='raised', borderwidth=1)
             
-            info_label = ttk.Label(main_frame, text=info_text, justify=tk.LEFT)
-            info_label.grid(row=1, column=0, columnspan=2, pady=(0, 15), sticky=tk.W)
+            success_text = f"✅ ANALYSIS COMPLETE!\n\n"
+            success_text += f"📈 {subject_count} subjects/sessions processed successfully\n"
+            success_text += f"📊 {len(self.analysis_results)} datasets ready for visualization\n\n"
+            success_text += "🎯 INSTRUCTIONS:\n"
+            success_text += "1. Select a subject from the dropdown below\n"
+            success_text += "2. Click any plot generation button\n"
+            success_text += "3. Plots will open automatically in your web browser\n"
+            success_text += "4. HTML files are saved locally for future reference"
+            
+            success_label = ttk.Label(success_frame, text=success_text, justify=tk.LEFT,
+                                     background='#E8F5E8', foreground='#2E7D32', 
+                                     font=('Arial', 10))
+            success_label.grid(row=0, column=0, padx=10, pady=10, sticky=tk.W)
             
             # Subject selection for plots
-            ttk.Label(main_frame, text="Select Subject for Plots:", style='Heading.TLabel').grid(row=2, column=0, sticky=tk.W, pady=5)
+            selection_frame = ttk.LabelFrame(main_frame, text="Subject Selection", padding="10")
+            selection_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
+            
+            ttk.Label(selection_frame, text="Select Subject:", 
+                     style='Heading.TLabel').grid(row=0, column=0, sticky=tk.W, pady=5)
             
             # Get available subjects
             subjects = [k for k in self.analysis_results.keys() if k not in ['clustering', 'forecasting']]
             
-            self.plot_subject_var = tk.StringVar()
-            self.plot_subject_combo = ttk.Combobox(main_frame, textvariable=self.plot_subject_var,
-                                                  values=subjects, state='readonly')
-            self.plot_subject_combo.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
+            # Create StringVar with explicit root reference to avoid "no default root window" error
+            self.plot_subject_var = tk.StringVar(master=self.root)
+            self.plot_subject_combo = ttk.Combobox(selection_frame, textvariable=self.plot_subject_var,
+                                                  values=subjects, state='readonly',
+                                                  font=('Arial', 10), width=30)
+            self.plot_subject_combo.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
             
             if subjects:
                 self.plot_subject_combo.set(subjects[0])  # Set first subject as default
             
+            selection_frame.columnconfigure(1, weight=1)
+            
             # Plot generation buttons with more prominent styling
-            button_frame = ttk.LabelFrame(main_frame, text="📊 Plot Generation", padding="10")
+            button_frame = ttk.LabelFrame(main_frame, text="📊 PLOT GENERATION CONTROLS", padding="15")
             button_frame.grid(row=3, column=0, columnspan=2, pady=15, sticky=(tk.W, tk.E))
+            button_frame.configure(relief='raised', borderwidth=3)
             
-            # Make button frame more visible
-            button_frame.configure(relief='raised', borderwidth=2)
+            # Individual plot buttons with better descriptions
+            ttk.Button(button_frame, text="🔵 Poincaré Plot\n(RR Interval Scatter)",
+                      command=self._generate_poincare_plot, 
+                      width=25, style='Primary.TButton').grid(row=0, column=0, padx=8, pady=8, sticky=(tk.W, tk.E))
             
-            ttk.Button(button_frame, text="🔵 Generate Poincaré Plot",
-                      command=self._generate_poincare_plot, width=25).grid(row=0, column=0, padx=5, pady=5, sticky=(tk.W, tk.E))
-            
-            ttk.Button(button_frame, text="📈 Generate PSD Plot", 
-                      command=self._generate_psd_plot, width=25).grid(row=0, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+            ttk.Button(button_frame, text="📈 PSD Plot\n(Frequency Analysis)", 
+                      command=self._generate_psd_plot, 
+                      width=25, style='Primary.TButton').grid(row=0, column=1, padx=8, pady=8, sticky=(tk.W, tk.E))
                       
-            ttk.Button(button_frame, text="📉 Generate Time Series Plot",
-                      command=self._generate_timeseries_plot, width=25).grid(row=1, column=0, padx=5, pady=5, sticky=(tk.W, tk.E))
+            ttk.Button(button_frame, text="📉 Time Series\n(RR Intervals vs Time)",
+                      command=self._generate_timeseries_plot, 
+                      width=25, style='Primary.TButton').grid(row=1, column=0, padx=8, pady=8, sticky=(tk.W, tk.E))
                       
-            ttk.Button(button_frame, text="🎛️ Generate Dashboard",
-                      command=self._generate_all_plots, width=25).grid(row=1, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+            ttk.Button(button_frame, text="🎛️ Full Dashboard\n(All Plots Combined)",
+                      command=self._generate_all_plots, 
+                      width=25, style='Primary.TButton').grid(row=1, column=1, padx=8, pady=8, sticky=(tk.W, tk.E))
             
-            # Combined analysis button
-            ttk.Button(button_frame, text="🔗 Combined Time Series (All Subjects)",
-                      command=self._generate_combined_time_series, width=52).grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky=(tk.W, tk.E))
+            # Combined analysis button - more prominent
+            combined_frame = ttk.Frame(button_frame)
+            combined_frame.grid(row=2, column=0, columnspan=2, pady=(10, 0), sticky=(tk.W, tk.E))
             
-            # Configure button frame columns
+            ttk.Button(combined_frame, text="🔗 GENERATE COMBINED TIME SERIES\n(All Subjects • All HRV Metrics • Comparative Analysis)",
+                      command=self._generate_combined_time_series, 
+                      style='Primary.TButton').grid(row=0, column=0, sticky=(tk.W, tk.E))
+            
+            combined_frame.columnconfigure(0, weight=1)
+            
+            # Configure button frame columns for proper resizing
             button_frame.columnconfigure(0, weight=1)
             button_frame.columnconfigure(1, weight=1)
             
-            # Plot display area
-            self.plot_display_frame = ttk.LabelFrame(main_frame, text="Plot Display", padding="10")
-            self.plot_display_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=10)
+            # Plot display area with better styling
+            self.plot_display_frame = ttk.LabelFrame(main_frame, text="📊 Plot Display & Status", 
+                                                    padding="15")
+            self.plot_display_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=15)
+            
+            initial_text = "🎯 SELECT A SUBJECT AND CLICK A PLOT BUTTON\n\n"
+            initial_text += "• All plots are interactive and open in your web browser\n"
+            initial_text += "• HTML files are saved locally for sharing and archiving\n" 
+            initial_text += "• Hover over data points for detailed information\n"
+            initial_text += "• Use browser zoom and pan controls for detailed exploration"
             
             self.plot_status_label = ttk.Label(self.plot_display_frame, 
-                                              text="Select a subject and click a plot button to generate visualizations.")
-            self.plot_status_label.grid(row=0, column=0, pady=10)
+                                              text=initial_text,
+                                              justify=tk.LEFT,
+                                              font=('Arial', 10))
+            self.plot_status_label.grid(row=0, column=0, pady=10, sticky=(tk.W, tk.E))
             
-            # Configure column weights
+            # Configure column weights for proper resizing
             main_frame.columnconfigure(1, weight=1)
             self.plots_scrollable_frame.columnconfigure(0, weight=1)
             
-            # Force GUI update to make buttons visible immediately
+            # Force immediate GUI update
             self.root.update_idletasks()
+            self.root.update()
             
-            # Update the results notebook to ensure the plots tab is visible
+            # Switch to plots tab to make buttons immediately visible
+            try:
+                self.results_notebook.select(1)  # Select plots tab (index 1)
+                logger.info("Automatically switched to plots tab")
+            except Exception as e:
+                logger.warning(f"Could not switch to plots tab: {e}")
+            
+            # Update the results notebook to ensure the plots tab is accessible
             try:
                 self.results_notebook.tab(1, state="normal")  # Enable plots tab
+                # Add a visual indicator that plots are ready
+                self.results_notebook.tab(1, text="✅ Visualizations")
+            except Exception as e:
+                logger.warning(f"Could not update plots tab state: {e}")
+            
+            # Show a notification that buttons are ready
+            try:
+                self.root.bell()  # System sound notification
             except:
                 pass
             
-            logger.info("✅ Plot controls created successfully! Buttons should now be visible.")
+            logger.info("✅ PLOT CONTROLS CREATED SUCCESSFULLY!")
+            logger.info(f"📊 {subject_count} subjects available for visualization")
+            logger.info("🎯 Plot buttons should now be visible in the Visualizations tab")
             
         except Exception as e:
-            logger.error(f"❌ Error updating plots display: {e}")
+            logger.error(f"❌ CRITICAL ERROR updating plots display: {e}")
             import traceback
+            logger.error("Full traceback:")
             logger.error(traceback.format_exc())
+            
+            # Create emergency fallback interface
+            try:
+                self._create_emergency_plot_interface(str(e))
+            except:
+                logger.error("Failed to create emergency interface")
+    
+    def _create_disabled_plot_interface(self):
+        """Create plot interface in disabled state when no analysis results."""
+        try:
+            main_frame = ttk.Frame(self.plots_scrollable_frame)
+            main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=10, pady=10)
+            
+            ttk.Label(main_frame, text="⚠️ NO ANALYSIS RESULTS", 
+                     style='Title.TLabel').grid(row=0, column=0, pady=20)
+            
+            ttk.Label(main_frame, 
+                     text="Run the HRV analysis first to enable plot generation.\n\n" +
+                          "1. Go to 'Analysis Configuration'\n" +
+                          "2. Select desired HRV domains\n" + 
+                          "3. Click 'Run HRV Analysis'\n" +
+                          "4. Return here when analysis completes",
+                     justify=tk.CENTER).grid(row=1, column=0, pady=20)
+                     
+        except Exception as e:
+            logger.error(f"Error creating disabled interface: {e}")
+    
+    def _create_emergency_plot_interface(self, error_msg):
+        """Create emergency plot interface when main interface fails."""
+        try:
+            main_frame = ttk.Frame(self.plots_scrollable_frame)
+            main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=10, pady=10)
+            
+            ttk.Label(main_frame, text="❌ PLOT INTERFACE ERROR", 
+                     style='Title.TLabel', foreground='red').grid(row=0, column=0, pady=10)
+            
+            error_text = f"Plot interface creation failed:\n{error_msg}\n\n"
+            error_text += "Emergency plot generation (basic functionality):"
+            
+            ttk.Label(main_frame, text=error_text, 
+                     justify=tk.LEFT, foreground='red').grid(row=1, column=0, pady=10)
+            
+            # Basic emergency buttons
+            if hasattr(self, 'analysis_results') and self.analysis_results:
+                subjects = list(self.analysis_results.keys())
+                
+                self.emergency_subject_var = tk.StringVar(master=self.root, value=subjects[0] if subjects else "")
+                emergency_combo = ttk.Combobox(main_frame, textvariable=self.emergency_subject_var,
+                                             values=subjects, state='readonly')
+                emergency_combo.grid(row=2, column=0, pady=10)
+                
+                ttk.Button(main_frame, text="Emergency Dashboard Plot", 
+                          command=self._emergency_generate_plot).grid(row=3, column=0, pady=10)
+                          
+        except Exception as e:
+            logger.error(f"Emergency interface also failed: {e}")
+    
+    def _emergency_generate_plot(self):
+        """Emergency plot generation method."""
+        try:
+            subject = self.emergency_subject_var.get()
+            if subject and subject in self.analysis_results:
+                result = self.analysis_results[subject]
+                if 'rr_intervals' in result:
+                    # Generate basic dashboard
+                    fig = self.interactive_plotter.create_hrv_dashboard(
+                        result['rr_intervals'],
+                        result.get('hrv_results', {}),
+                        subject_id=subject,
+                        session_id="Emergency"
+                    )
+                    
+                    plot_path = Path(f"emergency_plot_{subject.replace('/', '_')}.html")
+                    self.interactive_plotter.export_html(fig, str(plot_path))
+                    self._open_plot_file(plot_path)
+                    
+                    messagebox.showinfo("Success", f"Emergency plot created: {plot_path.name}")
+                else:
+                    messagebox.showerror("Error", "No RR interval data available")
+            else:
+                messagebox.showerror("Error", "No subject selected or data unavailable")
+                
+        except Exception as e:
+            logger.error(f"Emergency plot generation failed: {e}")
+            messagebox.showerror("Error", f"Emergency plot generation failed: {e}")
     
     def _clear_plots_display(self):
         """Clear all widgets from the plots display."""
@@ -3016,63 +3160,71 @@ Special Thanks:
         messagebox.showinfo("About Enhanced HRV Analysis", about_text)
         
     def _apply_memory_protection(self, hr_data: pd.Series, subject_key: str) -> pd.Series:
-        """
-        Smart memory management that balances performance with statistical power.
-        
-        CRITICAL FIX: Intelligent adaptive scaling instead of hard limits
-        - Minimum sample sizes for valid HRV statistics
-        - Progressive scaling based on data characteristics
-        - Performance vs. accuracy trade-offs
-        - Preserve temporal distribution when sampling
-        """
-        original_size = len(hr_data)
-        
-        # Smart memory protection thresholds
-        if self.fast_mode_var.get():
-            # Fast mode: Prioritize speed with minimum valid sample size
-            target_size = min(1000, original_size)
-            mode_description = "Fast mode"
-        else:
-            # Full analysis mode: Intelligent scaling based on data size
-            if original_size <= 5000:
-                # Small datasets: Use all data
-                target_size = original_size
-                mode_description = "Full analysis (small dataset)"
-            elif original_size <= 20000:
-                # Medium datasets: Use most data with minimal reduction
-                target_size = min(15000, original_size)
-                mode_description = "Memory optimized (medium dataset)"
-            elif original_size <= 50000:
-                # Large datasets: Intelligent sampling to maintain statistical power
-                target_size = min(25000, original_size)
-                mode_description = "Memory optimized (large dataset)"
-            else:
-                # Very large datasets: Aggressive but scientifically valid sampling
-                target_size = min(30000, original_size)
-                mode_description = "Memory optimized (very large dataset)"
-        
-        # Apply intelligent sampling if reduction is needed
-        if target_size < original_size:
-            # SCIENTIFIC SAMPLING: Preserve temporal distribution
-            # Use systematic sampling to maintain temporal characteristics
-            sampling_interval = original_size // target_size
+        """Apply memory protection and data validation with improved RR interval alignment."""
+        try:
+            original_size = len(hr_data)
             
-            if sampling_interval > 1:
-                # Systematic sampling with random start
-                start_idx = np.random.randint(0, min(sampling_interval, original_size - target_size))
-                indices = np.arange(start_idx, original_size, sampling_interval)[:target_size]
-                hr_data_sampled = hr_data.iloc[indices]
-                
-                logger.info(f"{mode_description}: Intelligently sampled {subject_key} from {original_size:,} to {len(hr_data_sampled):,} samples (systematic sampling)")
-            else:
-                # Random sampling as fallback
-                hr_data_sampled = hr_data.sample(n=target_size, random_state=42)
-                logger.info(f"{mode_description}: Randomly sampled {subject_key} from {original_size:,} to {len(hr_data_sampled):,} samples")
-                
-            return hr_data_sampled
-        else:
-            logger.info(f"{mode_description}: Using all {original_size:,} samples for {subject_key}")
+            # Remove invalid data points
+            hr_data = hr_data.dropna()
+            hr_data = hr_data[hr_data > 0]  # Remove zero or negative values
+            
+            # Apply fast mode if enabled or data is too large
+            if self.fast_mode or len(hr_data) > 10000:
+                # Use smart sampling instead of simple truncation to preserve temporal patterns
+                if len(hr_data) > 10000:
+                    logger.info(f"Memory protection: Limited {subject_key} to 10000 samples")
+                    # Sample at regular intervals to maintain temporal structure
+                    step_size = max(1, len(hr_data) // 10000)
+                    hr_data = hr_data.iloc[::step_size].head(10000)
+                else:
+                    logger.info(f"Fast mode: Limited {subject_key} to {len(hr_data)} samples")
+            
+            # Additional data quality checks
+            if len(hr_data) < 50:
+                logger.warning(f"Very short data segment for {subject_key}: {len(hr_data)} samples")
+                return hr_data
+            
+            # Fix common data alignment issues that cause Time-RR mismatch
+            # Ensure data is properly indexed with integer index
+            hr_data = hr_data.reset_index(drop=True)
+            
+            # Remove outliers that might cause processing issues
+            mean_hr = hr_data.mean()
+            std_hr = hr_data.std()
+            
+            # Define reasonable heart rate bounds (30-200 BPM)
+            lower_bound = max(30, mean_hr - 4 * std_hr)
+            upper_bound = min(200, mean_hr + 4 * std_hr)
+            
+            before_outlier_removal = len(hr_data)
+            hr_data = hr_data[(hr_data >= lower_bound) & (hr_data <= upper_bound)]
+            after_outlier_removal = len(hr_data)
+            
+            if before_outlier_removal != after_outlier_removal:
+                removed_count = before_outlier_removal - after_outlier_removal
+                logger.info(f"Removed {removed_count} outliers from {subject_key} "
+                           f"({removed_count/before_outlier_removal*100:.1f}%)")
+            
+            # Ensure minimum data requirement after cleaning
+            if len(hr_data) < 50:
+                logger.warning(f"Insufficient data after cleaning for {subject_key}: {len(hr_data)} samples")
+                return pd.Series(dtype=float)  # Return empty series
+            
+            # Reset index again to ensure clean integer indexing for RR calculation
+            hr_data = hr_data.reset_index(drop=True)
+            
+            # Log final data statistics
+            logger.info(f"Data processing for {subject_key}: "
+                       f"{original_size} → {len(hr_data)} samples "
+                       f"(mean: {hr_data.mean():.1f} BPM, "
+                       f"std: {hr_data.std():.1f} BPM)")
+            
             return hr_data
+            
+        except Exception as e:
+            logger.error(f"Error in memory protection for {subject_key}: {e}")
+            # Return original data if processing fails
+            return hr_data if isinstance(hr_data, pd.Series) else pd.Series(hr_data)
     
     def _perform_cached_analysis(self, subject_key: str, data_segment: pd.DataFrame, selected_domains: List[HRVDomain]) -> Optional[Dict[str, Any]]:
         """
@@ -3432,38 +3584,74 @@ Special Thanks:
         logger.info("Performance monitor disabled")
     
     def _on_window_closing(self):
-        """Handle window closing event - stops any running analysis."""
+        """Handle window closing event properly."""
         try:
-            # Check if analysis is currently running
+            logger.info("Window closing requested by user")
+            
+            # Check if analysis is running
             if self.analysis_running:
-                # Always stop analysis when closing - no background processing
-                result = messagebox.askyesno(
-                    "Analysis in Progress",
-                    "HRV analysis is currently running.\n\n" +
-                    "Closing the application will stop the analysis.\n" +
-                    "Any progress will be lost.\n\n" +
-                    "Do you want to stop the analysis and close?"
+                result = messagebox.askyesnocancel(
+                    "Analysis Running", 
+                    "HRV analysis is currently running. \n\n" +
+                    "⚠️ WARNING: Closing now will stop the analysis and lose progress.\n\n" +
+                    "What would you like to do?\n" +
+                    "• Yes: Stop analysis and close application\n" +
+                    "• No: Keep application open and continue analysis\n" +
+                    "• Cancel: Return to application"
                 )
                 
-                if result:
+                if result is True:  # Yes - close anyway
                     logger.info("User confirmed stopping analysis and closing")
-                    self._shutdown_analysis()
-                    self._shutdown_in_progress = True
-                    self.root.after(100, self.root.quit)
-                else:
-                    logger.info("User cancelled closing - keeping application open")
-                    return
-            else:
-                # No analysis running, close normally
-                logger.info("Closing application - no analysis running")
-                self._shutdown_in_progress = True
-                self.root.quit()
-                    
-        except Exception as e:
-            logger.error(f"Error in window closing handler: {e}")
-            # Fallback - just close
+                    self.analysis_running = False
+                    # Force stop any ongoing analysis
+                    if hasattr(self, 'current_analysis_tasks'):
+                        self.current_analysis_tasks.clear()
+                elif result is False:  # No - keep open
+                    logger.info("User chose to keep application open")
+                    return  # Don't close
+                else:  # Cancel - do nothing
+                    logger.info("User cancelled window closing")
+                    return  # Don't close
+            
+            # Clean shutdown
+            logger.info("Closing application - no analysis running")
+            
+            # Disable GUI updates to prevent errors during shutdown
+            self._gui_active = False
             self._shutdown_in_progress = True
+            
+            # Clear any remaining variables to prevent "no default root window" errors
+            try:
+                if hasattr(self, 'plot_subject_var'):
+                    del self.plot_subject_var
+                if hasattr(self, 'emergency_subject_var'):
+                    del self.emergency_subject_var
+            except:
+                pass
+            
+            # Close any open file handles or connections
+            try:
+                if hasattr(self, 'results_cache'):
+                    self.results_cache.cleanup()
+            except:
+                pass
+            
+            # Force garbage collection before closing
+            import gc
+            gc.collect()
+            
+            # Destroy the root window properly
             self.root.quit()
+            self.root.destroy()
+            
+        except Exception as e:
+            logger.error(f"Error during window closing: {e}")
+            # Force close anyway
+            try:
+                self.root.quit()
+                self.root.destroy()
+            except:
+                pass
     
     def _shutdown_analysis(self):
         """Properly shutdown analysis and async processor."""

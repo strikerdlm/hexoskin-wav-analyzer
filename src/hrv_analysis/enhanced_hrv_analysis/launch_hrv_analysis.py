@@ -17,7 +17,7 @@ import os
 import logging
 from pathlib import Path
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import threading
 import time
 
@@ -266,7 +266,14 @@ def load_application_with_progress(splash_screen, logger):
         
         # Step 2: Import GUI components
         splash_screen.update_progress(25)
-        from gui.main_application import HRVAnalysisApp
+        try:
+            from gui.main_application import HRVAnalysisApp
+        except ImportError as e:
+            logger.error(f"Failed to import main application: {e}")
+            messagebox.showerror("Import Error", 
+                               f"Failed to import HRV Analysis application:\n{e}\n\n"
+                               "Please ensure all required modules are installed.")
+            return None
         
         # Step 3: Create main window
         splash_screen.update_progress(40)
@@ -293,13 +300,24 @@ def load_application_with_progress(splash_screen, logger):
         
         # Step 6: Create application with progress tracking
         splash_screen.update_progress(70)
-        app = HRVAnalysisApp(root, progress_callback=app_progress_callback)
+        try:
+            app = HRVAnalysisApp(root, progress_callback=app_progress_callback)
+        except Exception as e:
+            logger.error(f"Failed to initialize HRV Analysis application: {e}")
+            messagebox.showerror("Initialization Error", 
+                               f"Failed to initialize HRV Analysis application:\n{e}")
+            return None
         
         # Step 7: Finalize setup and maximize window
         splash_screen.update_progress(90)
         
         # Maximize the window
-        root.state('zoomed')  # Windows-specific maximization
+        try:
+            root.state('zoomed')  # Windows-specific maximization
+        except tk.TclError:
+            # Fallback for other systems
+            root.attributes('-zoomed', True)
+        
         root.deiconify()  # Show the main window
         
         splash_screen.update_progress(100)
@@ -310,10 +328,15 @@ def load_application_with_progress(splash_screen, logger):
     except ImportError as e:
         logger.error(f"Failed to import GUI components: {e}")
         splash_screen.update_progress(0)
+        messagebox.showerror("Import Error", 
+                           f"Failed to import required components:\n{e}\n\n"
+                           "Please check your Python environment and dependencies.")
         return None
     except Exception as e:
         logger.error(f"Error loading application: {e}")
         splash_screen.update_progress(0)
+        messagebox.showerror("Application Error", 
+                           f"Error loading application:\n{e}")
         return None
 
 def main():
@@ -333,8 +356,9 @@ def main():
             splash.update_progress(0)
             time.sleep(3)
             splash.destroy()
-            safe_print("Press Enter to exit...")
-            input()
+            messagebox.showerror("Startup Failed", 
+                               "Failed to start the HRV Analysis application.\n"
+                               "Check the log file for details.")
             return 1
         
         root, app = result
@@ -355,13 +379,13 @@ def main():
         safe_print("[OK] Cache System: Speeds up repeated analysis")
         safe_print("[OK] All HRV Domains: Time, frequency, nonlinear metrics")
         safe_print("="*70)
-        safe_print("💡 THREADING ISSUES RESOLVED:")
-        safe_print("   • All analysis runs in main thread")
-        safe_print("   • No background processing complications")
-        safe_print("   • Real-time progress updates")
-        safe_print("   • Guaranteed reliability")
+        safe_print("GUI IMPROVEMENTS:")
+        safe_print("   • Plot buttons now properly created after analysis")
+        safe_print("   • Fixed visualization interface display")
+        safe_print("   • Enhanced error handling and user feedback")
+        safe_print("   • Improved data processing stability")
         safe_print("="*70)
-        safe_print("⚠️  ANALYSIS TIME NOTICE:")
+        safe_print("ANALYSIS TIME NOTICE:")
         safe_print("   • Time/Frequency Analysis: Fast (< 30 seconds)")
         safe_print("   • Nonlinear Analysis: May take 2-5 minutes")
         safe_print("   • Progress bar shows real-time status")
@@ -378,6 +402,9 @@ def main():
         return 0
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
+        messagebox.showerror("Critical Error", 
+                           f"A critical error occurred:\n{e}\n\n"
+                           "The application will now close.")
         return 1
     
     logger.info("Application finished successfully")

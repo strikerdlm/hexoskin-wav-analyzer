@@ -197,8 +197,9 @@ class SettingsPanel:
         cache_frame = ttk.Frame(notebook)
         notebook.add(cache_frame, text="🗄️ Intelligent Cache")
         
-        # Cache enabled
-        self.setting_vars['cache_enabled'] = tk.BooleanVar(value=self.current_settings['cache_enabled'])
+        # Cache enabled - Fix: specify master window to prevent "no default root window" error
+        self.setting_vars['cache_enabled'] = tk.BooleanVar(master=self.settings_window, 
+                                                          value=self.current_settings['cache_enabled'])
         ttk.Checkbutton(cache_frame, text="Enable intelligent caching", 
                        variable=self.setting_vars['cache_enabled']).pack(anchor=tk.W, pady=5)
         
@@ -207,7 +208,8 @@ class SettingsPanel:
         memory_frame.pack(fill=tk.X, pady=5)
         
         ttk.Label(memory_frame, text="Maximum Cache Memory (MB):").pack(anchor=tk.W)
-        self.setting_vars['cache_max_memory_mb'] = tk.IntVar(value=self.current_settings['cache_max_memory_mb'])
+        self.setting_vars['cache_max_memory_mb'] = tk.IntVar(master=self.settings_window,
+                                                            value=self.current_settings['cache_max_memory_mb'])
         memory_scale = ttk.Scale(memory_frame, from_=100, to=2000, 
                                 variable=self.setting_vars['cache_max_memory_mb'],
                                 orient=tk.HORIZONTAL, length=300)
@@ -226,7 +228,8 @@ class SettingsPanel:
         entries_frame.pack(fill=tk.X, pady=5)
         
         ttk.Label(entries_frame, text="Maximum Cache Entries:").pack(anchor=tk.W)
-        self.setting_vars['cache_max_entries'] = tk.IntVar(value=self.current_settings['cache_max_entries'])
+        self.setting_vars['cache_max_entries'] = tk.IntVar(master=self.settings_window,
+                                                          value=self.current_settings['cache_max_entries'])
         entries_scale = ttk.Scale(entries_frame, from_=100, to=5000,
                                  variable=self.setting_vars['cache_max_entries'],
                                  orient=tk.HORIZONTAL, length=300)
@@ -245,7 +248,8 @@ class SettingsPanel:
         ttl_frame.pack(fill=tk.X, pady=5)
         
         ttk.Label(ttl_frame, text="Cache TTL (hours):").pack(anchor=tk.W)
-        self.setting_vars['cache_ttl_hours'] = tk.DoubleVar(value=self.current_settings['cache_ttl_hours'])
+        self.setting_vars['cache_ttl_hours'] = tk.DoubleVar(master=self.settings_window,
+                                                           value=self.current_settings['cache_ttl_hours'])
         ttk.Entry(ttl_frame, textvariable=self.setting_vars['cache_ttl_hours'], width=15).pack(anchor=tk.W, pady=2)
     
     def _setup_async_settings_tab(self, notebook: ttk.Notebook):
