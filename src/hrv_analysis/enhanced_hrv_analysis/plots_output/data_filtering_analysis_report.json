@@ -1,0 +1,5 @@
+{
+  "total_raw_samples": 1567879,
+  "total_final_samples": 1010855,
+  "stage_losses": {
+    "nan_removal": 
