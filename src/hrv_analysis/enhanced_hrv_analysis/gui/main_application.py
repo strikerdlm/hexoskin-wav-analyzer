@@ -2558,17 +2558,13 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 messagebox.showwarning("Warning", "No analysis results available for GAM analysis")
                 return
 
-            self.plot_status_label.configure(text="Generating GAM crew analysis with trend lines and confidence intervals...")
+            self.plot_status_label.configure(text="Generating comprehensive GAM crew analysis with trend lines and confidence intervals...")
             self.root.update_idletasks()
 
-            # Generate GAM analysis for key HRV metrics
+            # Generate GAM analysis using comprehensive HRV metrics (will use defaults from interactive_plotter)
             gam_fig = self.interactive_plotter.create_gam_crew_analysis(
                 analysis_results=self.analysis_results,
-                metrics_to_plot=[
-                    'time_domain_rmssd', 'time_domain_sdnn', 'time_domain_pnn50',
-                    'frequency_domain_lf_power', 'frequency_domain_hf_power', 
-                    'frequency_domain_lf_hf_ratio'
-                ],
+                metrics_to_plot=None,  # Use comprehensive default metrics
                 show_individual_points=True,
                 show_crew_median=True,
                 confidence_level=0.95
@@ -2577,8 +2573,9 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             plot_path = Path("plots_output") / "hrv_gam_crew_analysis.html"
             self.interactive_plotter.export_html(gam_fig, str(plot_path))
 
-            success_text = f"✅ GAM Crew Analysis Generated!\n"
-            success_text += f"Professional analysis with trend lines and confidence intervals\n"
+            success_text = f"✅ Comprehensive GAM Crew Analysis Generated!\n"
+            success_text += f"Professional analysis with comprehensive HRV metrics across all domains\n"
+            success_text += f"Includes trend lines, confidence intervals, and crew median calculations\n"
             success_text += f"Analysis saved as: {plot_path.absolute()}"
             self.plot_status_label.configure(text=success_text)
 
@@ -2597,61 +2594,135 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
             custom_dialog = tk.Toplevel(self.root)
             custom_dialog.title("GAM Analysis - Select Metrics")
-            custom_dialog.geometry("450x550")
+            custom_dialog.geometry("600x700")
             custom_dialog.transient(self.root)
             custom_dialog.grab_set()
 
             # Header
             header_label = ttk.Label(custom_dialog, 
-                                   text="Select metrics for GAM crew analysis:",
-                                   font=('Helvetica', 12, 'bold'))
+                                   text="Select HRV Metrics for GAM Crew Analysis:",
+                                   font=('Helvetica', 14, 'bold'))
             header_label.pack(pady=10)
 
             # Info label
             info_label = ttk.Label(custom_dialog,
-                                 text="GAM analysis provides trend lines with confidence intervals",
-                                 font=('Helvetica', 9),
+                                 text="GAM analysis provides trend lines with confidence intervals for temporal analysis",
+                                 font=('Helvetica', 10),
                                  foreground='#555555')
             info_label.pack(pady=(0, 10))
+
+            # Get metrics organized by domain
+            available_metrics_by_domain = self.interactive_plotter.get_available_metrics_by_domain(self.analysis_results)
+            recommended_metrics = self.interactive_plotter._get_recommended_gam_metrics()
+            metric_descriptions = self.interactive_plotter._get_metric_descriptions()
 
             # --- Button Frame ---
             button_frame = ttk.Frame(custom_dialog)
             button_frame.pack(side=tk.BOTTOM, pady=10, fill=tk.X, padx=10)
-            button_frame.columnconfigure((0, 1), weight=1)
+            button_frame.columnconfigure((0, 1, 2), weight=1)
 
-            # --- Scrollable List Frame ---
-            list_container = ttk.Frame(custom_dialog)
-            list_container.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10)
-            
-            canvas = tk.Canvas(list_container)
-            scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=canvas.yview)
-            scrollable_frame = ttk.Frame(canvas)
+            # --- Tabbed Interface for Metric Selection ---
+            notebook = ttk.Notebook(custom_dialog)
+            notebook.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-            scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-            canvas.configure(yscrollcommand=scrollbar.set)
-
-            canvas.pack(side="left", fill="both", expand=True)
-            scrollbar.pack(side="right", fill="y")
-
-            available_metrics = self.interactive_plotter.get_available_metrics(self.analysis_results)
             metric_vars = {}
             
-            # Pre-select key metrics
-            recommended_metrics = {
-                'time_domain_rmssd', 'time_domain_sdnn', 'time_domain_pnn50',
-                'frequency_domain_lf_power', 'frequency_domain_hf_power'
-            }
+            # Tab 1: Recommended Metrics
+            recommended_frame = ttk.Frame(notebook)
+            notebook.add(recommended_frame, text="Recommended")
             
-            for metric in sorted(available_metrics):
-                var = tk.BooleanVar(master=self.root)
-                # Pre-select recommended metrics
-                if metric in recommended_metrics:
-                    var.set(True)
+            # Create canvas and scrollbar for recommended
+            rec_canvas = tk.Canvas(recommended_frame)
+            rec_scrollbar = ttk.Scrollbar(recommended_frame, orient="vertical", command=rec_canvas.yview)
+            rec_scrollable_frame = ttk.Frame(rec_canvas)
+
+            rec_scrollable_frame.bind("<Configure>", lambda e: rec_canvas.configure(scrollregion=rec_canvas.bbox("all")))
+            rec_canvas.create_window((0, 0), window=rec_scrollable_frame, anchor="nw")
+            rec_canvas.configure(yscrollcommand=rec_scrollbar.set)
+
+            rec_canvas.pack(side="left", fill="both", expand=True)
+            rec_scrollbar.pack(side="right", fill="y")
+
+            # Add recommended metrics by category
+            for domain_name, metrics in recommended_metrics.items():
+                # Domain header
+                domain_label = ttk.Label(rec_scrollable_frame, 
+                                       text=f"📊 {domain_name}",
+                                       font=('Helvetica', 12, 'bold'),
+                                       foreground='#2E86C1')
+                domain_label.pack(anchor=tk.W, padx=10, pady=(15, 5))
                 
-                chk = ttk.Checkbutton(scrollable_frame, text=metric, variable=var)
-                chk.pack(anchor=tk.W, padx=10, pady=2)
-                metric_vars[metric] = var
+                # Metrics in this domain
+                for metric in metrics:
+                    if metric in available_metrics_by_domain.get(domain_name.split(' ')[-1] if ' ' in domain_name else domain_name, []):
+                        var = tk.BooleanVar(master=self.root)
+                        var.set(True)  # Pre-select recommended metrics
+                        
+                        # Get metric description
+                        description = metric_descriptions.get(metric, metric)
+                        
+                        # Create frame for metric
+                        metric_frame = ttk.Frame(rec_scrollable_frame)
+                        metric_frame.pack(fill=tk.X, padx=20, pady=2)
+                        
+                        chk = ttk.Checkbutton(metric_frame, text=description[:60] + "..." if len(description) > 60 else description, variable=var)
+                        chk.pack(anchor=tk.W)
+                        metric_vars[metric] = var
+
+            # Tab 2: All Available Metrics
+            all_metrics_frame = ttk.Frame(notebook)
+            notebook.add(all_metrics_frame, text="All Available")
+            
+            # Create canvas and scrollbar for all metrics
+            all_canvas = tk.Canvas(all_metrics_frame)
+            all_scrollbar = ttk.Scrollbar(all_metrics_frame, orient="vertical", command=all_canvas.yview)
+            all_scrollable_frame = ttk.Frame(all_canvas)
+
+            all_scrollable_frame.bind("<Configure>", lambda e: all_canvas.configure(scrollregion=all_canvas.bbox("all")))
+            all_canvas.create_window((0, 0), window=all_scrollable_frame, anchor="nw")
+            all_canvas.configure(yscrollcommand=all_scrollbar.set)
+
+            all_canvas.pack(side="left", fill="both", expand=True)
+            all_scrollbar.pack(side="right", fill="y")
+
+            # Add all available metrics organized by domain
+            for domain_name, metrics in available_metrics_by_domain.items():
+                if metrics:  # Only show domains with available metrics
+                    # Domain header
+                    domain_label = ttk.Label(all_scrollable_frame, 
+                                           text=f"🔬 {domain_name}",
+                                           font=('Helvetica', 12, 'bold'),
+                                           foreground='#138D75')
+                    domain_label.pack(anchor=tk.W, padx=10, pady=(15, 5))
+                    
+                    # Metrics in this domain
+                    for metric in metrics:
+                        # Skip if already added in recommended
+                        if metric not in metric_vars:
+                            var = tk.BooleanVar(master=self.root)
+                            
+                            # Get metric description
+                            description = metric_descriptions.get(metric, metric.replace('_', ' ').title())
+                            
+                            # Create frame for metric
+                            metric_frame = ttk.Frame(all_scrollable_frame)
+                            metric_frame.pack(fill=tk.X, padx=20, pady=2)
+                            
+                            chk = ttk.Checkbutton(metric_frame, text=description[:60] + "..." if len(description) > 60 else description, variable=var)
+                            chk.pack(anchor=tk.W)
+                            metric_vars[metric] = var
+
+            def select_all_recommended():
+                """Select all recommended metrics."""
+                for domain_name, metrics in recommended_metrics.items():
+                    for metric in metrics:
+                        if metric in metric_vars:
+                            metric_vars[metric].set(True)
+            
+            def clear_all_selections():
+                """Clear all metric selections."""
+                for var in metric_vars.values():
+                    var.set(False)
 
             def generate_gam_plot():
                 selected_metrics = [metric for metric, var in metric_vars.items() if var.get()]
@@ -2662,7 +2733,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 
                 custom_dialog.destroy()
                 
-                self.plot_status_label.configure(text=f"Generating GAM analysis for {len(selected_metrics)} metrics...")
+                self.plot_status_label.configure(text=f"Generating comprehensive GAM analysis for {len(selected_metrics)} metrics...")
                 self.root.update_idletasks()
                 
                 gam_fig = self.interactive_plotter.create_gam_crew_analysis(
@@ -2673,11 +2744,12 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                     confidence_level=0.95
                 )
                 
-                plot_path = Path("plots_output") / "hrv_gam_custom_analysis.html"
+                plot_path = Path("plots_output") / "hrv_gam_comprehensive_analysis.html"
                 self.interactive_plotter.export_html(gam_fig, str(plot_path))
                 
-                success_text = f"✅ GAM Custom Analysis Generated!\n"
-                success_text += f"Advanced statistical analysis with {len(selected_metrics)} metrics\n"
+                success_text = f"✅ Comprehensive GAM Analysis Generated!\n"
+                success_text += f"Advanced statistical analysis with {len(selected_metrics)} HRV metrics\n"
+                success_text += f"Covers all HRV domains with trend analysis and confidence intervals\n" 
                 success_text += f"Analysis saved as: {plot_path.absolute()}"
                 self.plot_status_label.configure(text=success_text)
 
@@ -2686,8 +2758,12 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             def cancel_dialog():
                 custom_dialog.destroy()
             
-            ttk.Button(button_frame, text="Generate GAM Analysis", command=generate_gam_plot).grid(row=0, column=0, padx=5, sticky="ew")
-            ttk.Button(button_frame, text="Cancel", command=cancel_dialog).grid(row=0, column=1, padx=5, sticky="ew")
+            # Button row
+            ttk.Button(button_frame, text="Select Recommended", command=select_all_recommended).grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+            ttk.Button(button_frame, text="Clear All", command=clear_all_selections).grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+            
+            ttk.Button(button_frame, text="Generate GAM Analysis", command=generate_gam_plot, style='Accent.TButton').grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+            ttk.Button(button_frame, text="Cancel", command=cancel_dialog).grid(row=1, column=1, padx=5, pady=5, sticky="ew")
             
         except Exception as e:
             logger.error(f"Error in GAM custom analysis generation: {e}")

@@ -82,9 +82,9 @@ class SplashScreen:
         
         # Author and organization
         author_text = ("by Dr. Diego Malpica MD\n"
-                      "Directorate of Aerospace Medicine\n"
-                      "Colombian Aerospace Force\n"
-                      "Aerospace Scientific Department")
+                       "Directorate of Aerospace Medicine\n"
+                       "Colombian Aerospace Force\n"
+                       "Aerospace Scientific Department")
         author_label = tk.Label(
             main_frame,
             text=author_text,
@@ -189,11 +189,11 @@ def setup_logging():
                 # Replace problematic Unicode characters
                 msg = super().format(record)
                 msg = (msg.replace('✅', '[OK]')
-                         .replace('❌', '[ERROR]')
-                         .replace('⚠️', '[WARNING]'))
+                       .replace('❌', '[ERROR]')
+                       .replace('⚠️', '[WARNING]'))
                 msg = (msg.replace('🚀', '')
-                         .replace('📊', '')
-                         .replace('🎉', ''))
+                       .replace('📊', '')
+                       .replace('🎉', ''))
                 return msg
     
     # Create handlers with safe formatting
@@ -273,7 +273,8 @@ def check_dependencies():
         return False
     
     if missing_optional:
-        logger.warning("Missing optional dependencies. For full functionality:")
+        logger.warning("Missing optional dependencies. "
+                      "For full functionality:")
         for pkg in missing_optional:
             logger.warning(f"  pip install {pkg}")
     
@@ -287,11 +288,11 @@ def safe_print(text):
     except UnicodeEncodeError:
         # Replace problematic Unicode characters and try again
         safe_text = (text.replace('✅', '[OK]')
-                         .replace('❌', '[ERROR]')
-                         .replace('⚠️', '[WARNING]'))
+                     .replace('❌', '[ERROR]')
+                     .replace('⚠️', '[WARNING]'))
         safe_text = (safe_text.replace('🚀', '')
-                               .replace('📊', '')
-                               .replace('🎉', ''))
+                     .replace('📊', '')
+                     .replace('🎉', ''))
         print(safe_text)
 
 

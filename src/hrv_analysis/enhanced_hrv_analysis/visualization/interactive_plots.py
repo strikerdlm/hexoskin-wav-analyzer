@@ -419,13 +419,9 @@ class InteractivePlotter:
             Plotly figure with combined time series analysis
         """
         try:
-            # Default metrics to plot if none specified
+            # Use comprehensive metrics if none specified
             if metrics_to_plot is None:
-                metrics_to_plot = [
-                    'time_domain_sdnn', 'time_domain_rmssd', 'time_domain_pnn50', 'time_domain_mean_hr',
-                    'frequency_domain_lf_power', 'frequency_domain_hf_power', 'frequency_domain_lf_hf_ratio',
-                    'frequency_domain_lf_nu', 'frequency_domain_hf_nu'
-                ]
+                metrics_to_plot = self._get_comprehensive_gam_metrics()
             
             # Extract and organize time series data
             time_series_data = self._extract_time_series_data(analysis_results, subjects_to_include)
@@ -583,13 +579,9 @@ class InteractivePlotter:
             Plotly figure with GAM crew analysis
         """
         try:
-            # Default to key HRV metrics if none specified
+            # Comprehensive default metrics covering all HRV domains
             if metrics_to_plot is None:
-                metrics_to_plot = [
-                    'time_domain_rmssd', 'time_domain_sdnn', 'time_domain_pnn50',
-                    'frequency_domain_lf_power', 'frequency_domain_hf_power', 
-                    'frequency_domain_lf_hf_ratio'
-                ]
+                metrics_to_plot = self._get_comprehensive_gam_metrics()
             
             # Extract time series data
             time_series_data = self._extract_time_series_data(analysis_results, subjects_to_include)
@@ -1744,4 +1736,151 @@ class InteractivePlotter:
                     if isinstance(domain_metrics, dict):
                         for metric_name in domain_metrics.keys():
                             metrics.add(f"{domain}_{metric_name}")
-        return sorted(list(metrics)) 
+        return sorted(list(metrics))
+
+    def get_available_metrics_by_domain(self, analysis_results: Dict[str, Any]) -> Dict[str, List[str]]:
+        """Get available HRV metrics organized by domain for better user experience."""
+        domain_metrics = {
+            'Time Domain': [],
+            'Frequency Domain': [],
+            'Nonlinear': [],
+            'Parasympathetic': [],
+            'Sympathetic': [],
+            'ANS Balance': []
+        }
+        
+        domain_mapping = {
+            'time_domain': 'Time Domain',
+            'frequency_domain': 'Frequency Domain', 
+            'nonlinear': 'Nonlinear',
+            'parasympathetic': 'Parasympathetic',
+            'sympathetic': 'Sympathetic',
+            'ans_balance': 'ANS Balance'
+        }
+        
+        for key, result in analysis_results.items():
+            if 'hrv_results' in result:
+                for domain, domain_values in result['hrv_results'].items():
+                    if isinstance(domain_values, dict):
+                        domain_name = domain_mapping.get(domain, 'Other')
+                        for metric_name in domain_values.keys():
+                            full_metric_name = f"{domain}_{metric_name}"
+                            if full_metric_name not in domain_metrics.get(domain_name, []):
+                                domain_metrics.setdefault(domain_name, []).append(full_metric_name)
+        
+        # Sort metrics within each domain
+        for domain in domain_metrics:
+            domain_metrics[domain] = sorted(domain_metrics[domain])
+        
+        return domain_metrics
+
+    def _get_comprehensive_gam_metrics(self) -> List[str]:
+        """Get comprehensive list of GAM metrics covering all HRV domains."""
+        return [
+            # Time Domain - Core metrics
+            'time_domain_sdnn', 'time_domain_rmssd', 'time_domain_pnn50', 'time_domain_mean_hr',
+            'time_domain_cvnn', 'time_domain_nn20', 'time_domain_pnn20',
+            
+            # Frequency Domain - All frequency bands  
+            'frequency_domain_lf_power', 'frequency_domain_hf_power', 'frequency_domain_vlf_power',
+            'frequency_domain_lf_hf_ratio', 'frequency_domain_lf_nu', 'frequency_domain_hf_nu',
+            'frequency_domain_total_power', 'frequency_domain_lf_percent', 'frequency_domain_hf_percent',
+            
+            # Nonlinear - Poincare and complexity measures
+            'nonlinear_sd1', 'nonlinear_sd2', 'nonlinear_sd1_sd2_ratio', 'nonlinear_ellipse_area',
+            'nonlinear_dfa_alpha1', 'nonlinear_dfa_alpha2', 'nonlinear_sample_entropy', 
+            'nonlinear_triangular_index',
+            
+            # Parasympathetic - Vagal tone indicators
+            'parasympathetic_parasympathetic_index', 'parasympathetic_rsa_amplitude',
+            'parasympathetic_vagal_tone_index', 'parasympathetic_respiratory_coherence',
+            'parasympathetic_hf_rmssd_ratio',
+            
+            # Sympathetic - Sympathetic activity indicators  
+            'sympathetic_sympathetic_index', 'sympathetic_stress_index', 'sympathetic_autonomic_balance',
+            'sympathetic_cardiac_sympathetic_index', 'sympathetic_sympathetic_modulation',
+            
+            # ANS Balance - Advanced autonomic measures
+            'ans_balance_sympathovagal_index', 'ans_balance_ans_complexity',
+            'ans_balance_cardiac_autonomic_balance', 'ans_balance_autonomic_reactivity',
+            'ans_balance_baroreflex_sensitivity'
+        ]
+
+    def _get_recommended_gam_metrics(self) -> Dict[str, List[str]]:
+        """Get recommended GAM metrics organized by domain with descriptions."""
+        return {
+            'Essential Time Domain': [
+                'time_domain_sdnn',      # Overall HRV
+                'time_domain_rmssd',     # Parasympathetic activity
+                'time_domain_pnn50',     # Beat-to-beat variability
+                'time_domain_mean_hr'    # Average heart rate
+            ],
+            'Core Frequency Domain': [
+                'frequency_domain_lf_power',    # Low frequency power
+                'frequency_domain_hf_power',    # High frequency power  
+                'frequency_domain_lf_hf_ratio', # Sympathovagal balance
+                'frequency_domain_total_power'  # Overall spectral power
+            ],
+            'Advanced Nonlinear': [
+                'nonlinear_sd1',         # Short-term variability
+                'nonlinear_sd2',         # Long-term variability
+                'nonlinear_dfa_alpha1',  # Short-term scaling
+                'nonlinear_sample_entropy' # Complexity measure
+            ],
+            'Autonomic Indices': [
+                'parasympathetic_parasympathetic_index', # Vagal activity
+                'sympathetic_sympathetic_index',         # Sympathetic activity
+                'ans_balance_sympathovagal_index',       # Balance measure
+                'ans_balance_ans_complexity'             # System complexity
+            ]
+        }
+
+    def _get_metric_descriptions(self) -> Dict[str, str]:
+        """Get comprehensive metric descriptions for GAM analysis."""
+        return {
+            # Time Domain Descriptions
+            'time_domain_sdnn': 'SDNN - Standard deviation of RR intervals (overall HRV)',
+            'time_domain_rmssd': 'RMSSD - Root mean square of successive RR differences (parasympathetic)',
+            'time_domain_pnn50': 'pNN50 - Percentage of RR intervals differing >50ms (parasympathetic)',
+            'time_domain_mean_hr': 'Mean HR - Average heart rate in beats per minute',
+            'time_domain_cvnn': 'CVNN - Coefficient of variation of RR intervals',
+            'time_domain_nn20': 'NN20 - Count of RR intervals differing >20ms',
+            'time_domain_pnn20': 'pNN20 - Percentage of RR intervals differing >20ms',
+            
+            # Frequency Domain Descriptions
+            'frequency_domain_lf_power': 'LF Power - Low frequency spectral power (0.04-0.15 Hz)',
+            'frequency_domain_hf_power': 'HF Power - High frequency spectral power (0.15-0.4 Hz)',
+            'frequency_domain_vlf_power': 'VLF Power - Very low frequency spectral power (0.003-0.04 Hz)',
+            'frequency_domain_lf_hf_ratio': 'LF/HF Ratio - Sympathovagal balance indicator',
+            'frequency_domain_lf_nu': 'LF (n.u.) - LF power in normalized units',
+            'frequency_domain_hf_nu': 'HF (n.u.) - HF power in normalized units',
+            'frequency_domain_total_power': 'Total Power - Total spectral power across all bands',
+            
+            # Nonlinear Descriptions
+            'nonlinear_sd1': 'SD1 - Poincaré plot width (short-term variability)',
+            'nonlinear_sd2': 'SD2 - Poincaré plot length (long-term variability)', 
+            'nonlinear_sd1_sd2_ratio': 'SD1/SD2 - Poincaré ratio (autonomic balance)',
+            'nonlinear_ellipse_area': 'Ellipse Area - Poincaré plot ellipse area',
+            'nonlinear_dfa_alpha1': 'DFA α1 - Short-term detrended fluctuation scaling',
+            'nonlinear_dfa_alpha2': 'DFA α2 - Long-term detrended fluctuation scaling',
+            'nonlinear_sample_entropy': 'SampEn - Sample entropy (signal regularity)',
+            'nonlinear_triangular_index': 'TINN - Triangular interpolation index',
+            
+            # Parasympathetic Descriptions
+            'parasympathetic_parasympathetic_index': 'Para Index - Composite parasympathetic activity',
+            'parasympathetic_vagal_tone_index': 'Vagal Tone - Composite vagal tone measure',
+            'parasympathetic_rsa_amplitude': 'RSA Amplitude - Respiratory sinus arrhythmia strength',
+            'parasympathetic_respiratory_coherence': 'Resp Coherence - Respiratory-cardiac coupling',
+            
+            # Sympathetic Descriptions
+            'sympathetic_sympathetic_index': 'Sympa Index - Composite sympathetic activity',
+            'sympathetic_stress_index': 'Stress Index - Baevsky stress indicator',
+            'sympathetic_cardiac_sympathetic_index': 'Cardiac Sympa - Cardiac sympathetic activity',
+            
+            # ANS Balance Descriptions
+            'ans_balance_sympathovagal_index': 'Sympathovagal - Advanced autonomic balance',
+            'ans_balance_ans_complexity': 'ANS Complexity - Autonomic system complexity',
+            'ans_balance_cardiac_autonomic_balance': 'Cardiac Balance - Cardiac autonomic balance',
+            'ans_balance_autonomic_reactivity': 'ANS Reactivity - Autonomic responsiveness',
+            'ans_balance_baroreflex_sensitivity': 'Baroreflex Sens - Baroreflex sensitivity estimate'
+        } 

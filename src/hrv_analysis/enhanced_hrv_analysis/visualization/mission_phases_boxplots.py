@@ -227,7 +227,8 @@ class MissionPhasesBoxplotGenerator:
         
         # Create subplots
         n_metrics = len(plot_metrics)
-        fig, axes = plt.subplots(n_metrics, 1, figsize=(16, 5 * n_metrics))
+        # Increase figure size to accommodate all elements and prevent tight_layout warnings
+        fig, axes = plt.subplots(n_metrics, 1, figsize=(18, 6 * n_metrics))
         if n_metrics == 1:
             axes = [axes]
         
@@ -278,7 +279,13 @@ class MissionPhasesBoxplotGenerator:
                 ax.text(0.5, 0.5, f'No data for {metric}', ha='center', va='center',
                        transform=ax.transAxes, fontsize=12)
         
-        plt.tight_layout()
+        # Apply tight layout with proper error handling and padding
+        try:
+            plt.tight_layout(pad=3.0)
+        except Exception as e:
+            logger.warning(f"Tight layout adjustment failed: {e}")
+            # Fallback to manual spacing adjustment
+            plt.subplots_adjust(hspace=0.4, wspace=0.3)
         
         # Save plot
         plot_path = Path(output_dir) / "individual_mission_phases_boxplots.png"
@@ -323,7 +330,8 @@ class MissionPhasesBoxplotGenerator:
         n_cols = 3
         n_rows = (len(plot_metrics) + n_cols - 1) // n_cols
         
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(18, 6 * n_rows))
+        # Increase figure size to accommodate all elements and prevent tight_layout warnings
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(20, 7 * n_rows))
         axes = axes.flatten() if n_rows > 1 else [axes] if n_cols == 1 else axes
         
         colors = ['lightblue', 'lightgreen', 'lightcoral']
@@ -390,7 +398,13 @@ class MissionPhasesBoxplotGenerator:
         for j in range(len(plot_metrics), len(axes)):
             fig.delaxes(axes[j])
         
-        plt.tight_layout()
+        # Apply tight layout with proper error handling and padding
+        try:
+            plt.tight_layout(pad=3.0)
+        except Exception as e:
+            logger.warning(f"Tight layout adjustment failed: {e}")
+            # Fallback to manual spacing adjustment
+            plt.subplots_adjust(hspace=0.4, wspace=0.3)
         
         # Save plot
         plot_path = Path(output_dir) / "group_mission_phases_boxplots.png"
