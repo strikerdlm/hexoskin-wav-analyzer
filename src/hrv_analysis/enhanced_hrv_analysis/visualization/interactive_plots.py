@@ -2015,19 +2015,31 @@ class InteractivePlotter:
             'ans_balance': 'ANS Balance'
         }
         
+        logger.debug(f"Searching for metrics in {len(analysis_results)} analysis results")
+        
         for key, result in analysis_results.items():
             if 'hrv_results' in result:
+                logger.debug(f"Processing {key}, hrv_results domains: {list(result['hrv_results'].keys())}")
                 for domain, domain_values in result['hrv_results'].items():
                     if isinstance(domain_values, dict):
                         domain_name = domain_mapping.get(domain, 'Other')
+                        logger.debug(f"Domain {domain} -> {domain_name}, metrics: {list(domain_values.keys())}")
                         for metric_name in domain_values.keys():
                             full_metric_name = f"{domain}_{metric_name}"
                             if full_metric_name not in domain_metrics.get(domain_name, []):
                                 domain_metrics.setdefault(domain_name, []).append(full_metric_name)
+                                logger.debug(f"Added {full_metric_name} to {domain_name}")
         
         # Sort metrics within each domain
         for domain in domain_metrics:
             domain_metrics[domain] = sorted(domain_metrics[domain])
+        
+        # Log final results
+        total_metrics = sum(len(metrics) for metrics in domain_metrics.values())
+        logger.info(f"Found {total_metrics} total metrics across {len([d for d in domain_metrics.values() if d])} domains")
+        for domain, metrics in domain_metrics.items():
+            if metrics:
+                logger.debug(f"{domain}: {len(metrics)} metrics - {metrics[:3]}{'...' if len(metrics) > 3 else ''}")
         
         return domain_metrics
 
@@ -2157,11 +2169,24 @@ class InteractivePlotter:
         """
         logger.info("Creating metric-focused time series with dropdown selection")
         
+        # Log analysis results structure for debugging
+        logger.debug(f"Analysis results keys: {list(analysis_results.keys())}")
+        sample_key = list(analysis_results.keys())[0] if analysis_results else None
+        if sample_key:
+            sample_result = analysis_results[sample_key]
+            logger.debug(f"Sample result structure: {list(sample_result.keys())}")
+            if 'hrv_results' in sample_result:
+                logger.debug(f"Sample HRV results domains: {list(sample_result['hrv_results'].keys())}")
+        
         # Get comprehensive metrics organized by domain
         available_metrics_by_domain = self.get_available_metrics_by_domain(analysis_results)
         
         if not any(available_metrics_by_domain.values()):
-            raise ValueError("No HRV metrics available for visualization")
+            logger.error("No HRV metrics found in any domain")
+            logger.error(f"Available domains searched: {list(available_metrics_by_domain.keys())}")
+            raise ValueError("No HRV metrics available for visualization. Check that HRV analysis has been run successfully.")
+        
+        logger.info(f"Found metrics in {len([d for d, m in available_metrics_by_domain.items() if m])} domains")
         
         # Create figure
         fig = go.Figure()
@@ -2170,7 +2195,14 @@ class InteractivePlotter:
         all_metrics_data = self._prepare_all_metrics_data(analysis_results, available_metrics_by_domain)
         
         if not all_metrics_data:
-            raise ValueError("No valid metric data found for visualization")
+            logger.error("No metric data could be extracted")
+            logger.error("This usually means:")
+            logger.error("1. HRV analysis hasn't been run yet")
+            logger.error("2. Analysis results don't contain expected structure")
+            logger.error("3. All metrics have NaN values")
+            raise ValueError("No valid metric data found for visualization. Please run HRV analysis first.")
+        
+        logger.info(f"Successfully extracted data for {len(all_metrics_data)} metrics")
         
         # Color palette for subjects
         colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
@@ -2241,6 +2273,12 @@ class InteractivePlotter:
                     ]
                 )
                 buttons.append(button)
+        
+        if not buttons:
+            logger.error("No dropdown buttons could be created - no metrics have plottable data")
+            raise ValueError("No metrics with valid time series data found for visualization")
+        
+        logger.info(f"Created {len(buttons)} dropdown options for metric selection")
         
         # Update layout with professional styling
         fig.update_layout(
@@ -2329,6 +2367,8 @@ class InteractivePlotter:
         """Prepare comprehensive metrics data for display with simplified structure."""
         all_metrics = {}
         
+        logger.debug(f"Available metrics by domain: {available_metrics_by_domain}")
+        
         # First, collect all possible metrics from the analysis results
         for subject_session, results in analysis_results.items():
             if not isinstance(results, dict) or 'hrv_results' not in results:
@@ -2338,45 +2378,69 @@ class InteractivePlotter:
             sol_number = results.get('sol_number', 0)
             subject_name = subject_session.split('_')[0] if '_' in subject_session else subject_session
             
+            logger.debug(f"Processing {subject_session}: sol={sol_number}, subject={subject_name}")
+            logger.debug(f"HRV results domains: {list(hrv_results.keys())}")
+            
             # Extract metrics from all domains
             for domain_name, domain_metrics in available_metrics_by_domain.items():
                 domain_key = domain_name.lower().replace(' ', '_')
                 
                 if domain_key in hrv_results and isinstance(hrv_results[domain_key], dict):
                     domain_data = hrv_results[domain_key]
+                    logger.debug(f"Domain {domain_key} has keys: {list(domain_data.keys())}")
                     
-                    for metric in domain_metrics:
+                    for full_metric_name in domain_metrics:
+                        # Extract the metric key from the full name (e.g., "time_domain_sdnn" -> "sdnn")
+                        if full_metric_name.startswith(f"{domain_key}_"):
+                            metric_key = full_metric_name[len(domain_key) + 1:]  # Remove "domain_" prefix
+                        else:
+                            metric_key = full_metric_name
+                        
                         # Try different variations of the metric key
-                        possible_keys = [metric, metric.lower(), metric.replace(' ', '_').lower()]
+                        possible_keys = [metric_key, metric_key.lower(), metric_key.replace(' ', '_').lower()]
                         
                         metric_value = None
+                        found_key = None
                         for key in possible_keys:
-                            if key in domain_data and not np.isnan(float(domain_data[key])):
-                                metric_value = float(domain_data[key])
-                                break
+                            if key in domain_data:
+                                try:
+                                    value = float(domain_data[key])
+                                    if not np.isnan(value):
+                                        metric_value = value
+                                        found_key = key
+                                        break
+                                except (ValueError, TypeError):
+                                    continue
                         
                         if metric_value is not None:
-                            metric_name = f"{domain_name}_{metric}"
+                            logger.debug(f"Found {full_metric_name}: {found_key}={metric_value}")
                             
-                            if metric_name not in all_metrics:
-                                all_metrics[metric_name] = {}
+                            if full_metric_name not in all_metrics:
+                                all_metrics[full_metric_name] = {}
                             
-                            if subject_name not in all_metrics[metric_name]:
-                                all_metrics[metric_name][subject_name] = []
+                            if subject_name not in all_metrics[full_metric_name]:
+                                all_metrics[full_metric_name][subject_name] = []
                             
-                            all_metrics[metric_name][subject_name].append({
+                            all_metrics[full_metric_name][subject_name].append({
                                 'value': metric_value,
                                 'sol': float(sol_number),
                                 'subject': subject_name,
                                 'session': subject_session,
                                 'domain': domain_name,
-                                'unit': self._get_metric_unit(metric)
+                                'unit': self._get_metric_unit(metric_key)
                             })
         
         # Sort each subject's data by Sol number
         for metric_name in all_metrics:
             for subject_name in all_metrics[metric_name]:
                 all_metrics[metric_name][subject_name].sort(key=lambda x: x['sol'])
+        
+        logger.info(f"Prepared metrics data for {len(all_metrics)} metrics across {len(set(subject for metric_data in all_metrics.values() for subject in metric_data.keys()))} subjects")
+        
+        # Log sample of extracted metrics for debugging
+        if all_metrics:
+            sample_metric = list(all_metrics.keys())[0]
+            logger.debug(f"Sample metric '{sample_metric}' has data for subjects: {list(all_metrics[sample_metric].keys())}")
         
         return all_metrics
     
