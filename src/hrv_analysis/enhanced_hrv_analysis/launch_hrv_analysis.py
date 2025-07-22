@@ -18,12 +18,25 @@ import logging
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox
-import threading
 import time
 
 # Add current directory to Python path for imports
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
+
+# CRITICAL: Set correct working directory to prevent plots being exported 
+# to wrong location
+# Project root should be: C:\Users\User\OneDrive\FAC\Research\Valquiria\Data
+project_root = current_dir.parent.parent.parent
+os.chdir(str(project_root))
+
+# Create plots output directory at the project root
+plots_output_dir = Path("plots_output")
+plots_output_dir.mkdir(parents=True, exist_ok=True)
+
+print(f"Working directory set to: {os.getcwd()}")
+print(f"Plots will be exported to: {plots_output_dir.absolute()}")
+
 
 class SplashScreen:
     """Loading splash screen with progress indication."""
@@ -144,6 +157,7 @@ class SplashScreen:
         """Close the splash screen."""
         if self.splash and self.splash.winfo_exists():
             self.splash.destroy()
+
 
 def setup_logging():
     """Setup logging for the application."""

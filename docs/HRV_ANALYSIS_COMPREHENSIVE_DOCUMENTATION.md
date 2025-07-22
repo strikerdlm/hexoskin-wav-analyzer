@@ -984,6 +984,84 @@ tools_menu.add_separator()
 3. **Reliable Plot Generation:** Visualization controls appear consistently
 4. **Stable Application:** No more crashes during normal operation
 
+### **🚨 CRITICAL PROJECT LOCATION FIXES**
+**Applied: 2025-01-14 00:00:00 UTC**
+
+#### **❌ PROBLEM: Incorrect Plot Export Location**
+**Issue:** Plots were being exported to wrong directory:
+- ❌ **Wrong:** `C:\Users\User\OneDrive\FAC\Research\Python Scripts`
+- ✅ **Correct:** `C:\Users\User\OneDrive\FAC\Research\Valquiria\Data\src\hrv_analysis\plots_output`
+
+#### **✅ FIXES IMPLEMENTED:**
+
+**1. Working Directory Lock in Launch Script**
+```python
+# Set correct working directory to prevent wrong exports
+project_root = current_dir.parent.parent.parent  
+os.chdir(str(project_root))
+plots_output_dir = project_root / "src" / "hrv_analysis" / "plots_output"
+```
+
+**2. Export Path Protection**
+```python
+# Always use correct project directory for plots
+if not Path(filename).is_absolute():
+    plots_dir = Path("src/hrv_analysis/plots_output")
+    output_path = plots_dir / filename
+```
+
+**3. Project Boundaries Enforcement**
+- All paths now relative to Valquiria project root
+- Automatic creation of `plots_output` directory
+- Prevention of exports to external directories
+
+#### **📊 IMPACT:**
+- ✅ **All plots export to:** `src/hrv_analysis/plots_output/`
+- ✅ **No more wrong directory exports** to Python Scripts folder
+- ✅ **Project organization maintained** - all files stay in Valquiria project
+- ✅ **Easy access to generated plots** within project structure
+
+### **🎨 PROFESSIONAL UI ENHANCEMENTS**
+**Applied: 2025-01-14 00:00:00 UTC**
+
+#### **✅ VISUALIZATION INTERFACE IMPROVEMENTS:**
+
+**1. Professional Button Design**
+- **Enhanced styling** with consistent padding and sizing
+- **Clear descriptive labels** with icons and technical details
+- **Proper spacing** with improved grid layout
+- **Professional terminology** (e.g., "POWER SPECTRUM" vs "PSD Plot")
+
+**2. Button Functionality Links**
+- **🔵 POINCARÉ PLOT** → Generates `poincare_plot_[subject].html`
+- **📊 POWER SPECTRUM** → Generates `psd_plot_[subject].html`
+- **📈 TIME SERIES** → Generates `timeseries_plot_[subject].html`
+- **🎯 FULL DASHBOARD** → Generates `hrv_dashboard_[subject].html`
+- **🔗 COMBINED ANALYSIS** → Generates multi-subject comparative plots
+
+**3. Automated Plot Opening**
+- **Automatic browser launch** after plot generation
+- **Clear status messages** with file locations and plot details
+- **Professional feedback** with success/error handling
+- **Manual re-open buttons** for easy access to saved plots
+
+#### **📂 ORGANIZED PLOT STRUCTURE:**
+```
+Valquiria Data (Main)/src/hrv_analysis/plots_output/
+├── poincare_plot_T01_Subject_Sol2.html
+├── psd_plot_T01_Subject_Sol2.html
+├── timeseries_plot_T01_Subject_Sol2.html
+├── hrv_dashboard_T01_Subject_Sol2.html
+└── [all other generated plots...]
+```
+
+#### **🎯 USER EXPERIENCE BENEFITS:**
+- **Professional appearance** matching scientific software standards
+- **Clear button purpose** with technical terminology
+- **Instant feedback** with detailed status messages
+- **Organized file management** with all plots in dedicated directory
+- **Zero path confusion** - plots always saved in correct location
+
 ---
 
 **🎉 Your Enhanced HRV Analysis application is now complete with all major issues resolved and powerful new features added!**

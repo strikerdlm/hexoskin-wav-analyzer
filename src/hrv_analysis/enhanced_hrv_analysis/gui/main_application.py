@@ -481,216 +481,101 @@ class HRVAnalysisApp:
         self.results_frame.rowconfigure(0, weight=1)
         
     def _setup_plots_tab(self):
-        """Setup the plots display tab with embedded HTML viewer."""
-        # Try to import tkhtml or tkhtml3
-        self.html_viewer = None
-        try:
-            # Try to use built-in web browser widget if available
-            import tkinter.html as html
-            self.html_viewer = html.HTMLText(self.plots_frame)
-        except ImportError:
-            pass
+        """Setup the modern, interactive plots tab."""
+        # Main frame with a professional background color
+        main_frame = ttk.Frame(self.plots_frame, style='Plots.TFrame')
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.plots_frame.columnconfigure(0, weight=1)
+        self.plots_frame.rowconfigure(0, weight=1)
+
+        # Configure styles
+        style = ttk.Style()
+        style.configure('Plots.TFrame', background='#F0F4F8')
+        style.configure('PlotButton.TButton', font=('Helvetica', 11, 'bold'), padding=10)
+        style.configure('Header.TLabel', font=('Helvetica', 16, 'bold'), background='#F0F4F8')
+        style.configure('SubHeader.TLabel', font=('Helvetica', 10), background='#F0F4F8', foreground='#555')
+
+        # Header section
+        header_frame = ttk.Frame(main_frame, style='Plots.TFrame')
+        header_frame.pack(pady=(20, 10), padx=20, fill=tk.X)
+
+        ttk.Label(header_frame, text="HRV Visualizations", style='Header.TLabel').pack(anchor=tk.W)
+        ttk.Label(header_frame, text="Select a subject and generate interactive plots.", style='SubHeader.TLabel').pack(anchor=tk.W)
+
+        # Controls section
+        controls_frame = ttk.Frame(main_frame, style='Plots.TFrame')
+        controls_frame.pack(pady=10, padx=20, fill=tk.X)
+
+        # Subject selection
+        subject_frame = ttk.Frame(controls_frame, style='Plots.TFrame')
+        subject_frame.pack(fill=tk.X)
+        ttk.Label(subject_frame, text="Subject:", font=('Helvetica', 10, 'bold'), background='#F0F4F8').pack(side=tk.LEFT, padx=(0, 10))
+        self.plot_subject_var = tk.StringVar(master=self.root)
+        self.plot_subject_combo = ttk.Combobox(subject_frame, textvariable=self.plot_subject_var, state='readonly', width=40)
+        self.plot_subject_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # Create plot buttons in a grid layout
+        buttons_frame = ttk.Frame(main_frame)
+        buttons_frame.pack(pady=10, padx=10, fill=tk.X)
+        buttons_frame.columnconfigure((0, 1, 2), weight=1)
         
-        # If no HTML viewer available, create scrollable frame for plot controls
-        if self.html_viewer is None:
-            # Create main container with paned window for controls and display
-            self.plots_paned = ttk.PanedWindow(self.plots_frame, orient=tk.VERTICAL)
-            self.plots_paned.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-            self.plots_frame.columnconfigure(0, weight=1)
-            self.plots_frame.rowconfigure(0, weight=1)
-            
-            # Top pane: Plot controls
-            self.plots_control_frame = ttk.Frame(self.plots_paned)
-            self.plots_paned.add(self.plots_control_frame, weight=1)
-            
-            # Create scrollable frame for plot controls
-            self.plots_canvas = tk.Canvas(self.plots_control_frame)
-            self.plots_scrollbar = ttk.Scrollbar(self.plots_control_frame, orient="vertical", command=self.plots_canvas.yview)
-            self.plots_scrollable_frame = ttk.Frame(self.plots_canvas)
-            
-            self.plots_scrollable_frame.bind(
-                "<Configure>",
-                lambda e: self.plots_canvas.configure(scrollregion=self.plots_canvas.bbox("all"))
-            )
-            
-            self.plots_canvas.create_window((0, 0), window=self.plots_scrollable_frame, anchor="nw")
-            self.plots_canvas.configure(yscrollcommand=self.plots_scrollbar.set)
-            
-            # Grid the canvas and scrollbar
-            self.plots_canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-            self.plots_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
-            
-            self.plots_control_frame.columnconfigure(0, weight=1)
-            self.plots_control_frame.rowconfigure(0, weight=1)
-            
-            # Bottom pane: Embedded plot display area
-            self.plot_display_area = ttk.LabelFrame(self.plots_paned, text="Plot Preview", padding="10")
-            self.plots_paned.add(self.plot_display_area, weight=3)
-            
-            # Create text area for plot preview information and instructions
-            self.plot_preview_text = scrolledtext.ScrolledText(
-                self.plot_display_area, 
-                wrap=tk.WORD, 
-                height=15,
-                font=('Courier', 10)
-            )
-            self.plot_preview_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-            self.plot_display_area.columnconfigure(0, weight=1)
-            self.plot_display_area.rowconfigure(0, weight=1)
-            
-            # Set initial content
-            self._set_plot_preview_instructions()
-        else:
-            # Use HTML viewer if available
-            self.html_viewer.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-            self.plots_frame.columnconfigure(0, weight=1)
-            self.plots_frame.rowconfigure(0, weight=1)
+        # Row 1 - Individual plot types
+        ttk.Button(buttons_frame, text="Poincaré Plot", 
+                  command=self._generate_poincare_plot,
+                  style='Accent.TButton').grid(row=0, column=0, padx=5, pady=5, sticky="ew")
         
-        # Initial placeholder for controls
-        self.plots_placeholder = ttk.Label(self.plots_scrollable_frame, 
-                                          text="Run analysis first, then use plot controls to generate visualizations.",
-                                          justify=tk.CENTER)
-        self.plots_placeholder.grid(row=0, column=0, padx=20, pady=20)
+        ttk.Button(buttons_frame, text="Power Spectral Density", 
+                  command=self._generate_psd_plot,
+                  style='Accent.TButton').grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        
+        ttk.Button(buttons_frame, text="RR Interval Time Series", 
+                  command=self._generate_timeseries_plot,
+                  style='Accent.TButton').grid(row=0, column=2, padx=5, pady=5, sticky="ew")
+        
+        # Row 2 - Advanced analysis types
+        ttk.Button(buttons_frame, text="HRV Dashboard", 
+                  command=self._generate_all_plots,
+                  style='Accent.TButton').grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+        
+        ttk.Button(buttons_frame, text="Combined Time Series", 
+                  command=self._generate_combined_time_series,
+                  style='Accent.TButton').grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        
+        ttk.Button(buttons_frame, text="Custom Time Series", 
+                  command=self._generate_custom_time_series,
+                  style='Accent.TButton').grid(row=1, column=2, padx=5, pady=5, sticky="ew")
+        
+        # Row 3 - GAM Analysis (New)
+        ttk.Button(buttons_frame, text="GAM Crew Analysis", 
+                  command=self._generate_gam_crew_analysis,
+                  style='Info.TButton').grid(row=2, column=0, padx=5, pady=5, sticky="ew")
+        
+        ttk.Button(buttons_frame, text="GAM Custom Metrics", 
+                  command=self._generate_gam_custom_analysis,
+                  style='Info.TButton').grid(row=2, column=1, padx=5, pady=5, sticky="ew")
+        
+        # Description label for GAM analysis
+        gam_desc_label = ttk.Label(main_frame,
+                                  text="GAM Analysis: Advanced statistical modeling with trend lines and confidence intervals for crew-wide analysis",
+                                  font=('Helvetica', 9),
+                                  foreground='#555555')
+        gam_desc_label.pack(pady=(5, 0))
+        
+        # Status display
+        self.plot_status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
+        self.plot_status_frame.pack(pady=10, padx=20, fill=tk.X)
+
+        self.plot_status_label = ttk.Label(self.plot_status_frame, text="Ready to generate plots.", wraplength=700)
+        self.plot_status_label.pack(fill=tk.X)
     
     def _set_plot_preview_instructions(self):
         """Set instructions in the plot preview area."""
-        if hasattr(self, 'plot_preview_text'):
-            instructions = """
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                          HRV VISUALIZATION CENTER                             ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-
-Welcome to the Enhanced HRV Analysis Visualization System!
-
-📊 AVAILABLE PLOT TYPES:
-
-1. 🔵 POINCARÉ PLOT
-   • Shows beat-to-beat heart rate variability patterns
-   • RR(n) vs RR(n+1) scatter plot with fitted ellipse
-   • SD1 (short-term) and SD2 (long-term) variability visualization
-
-2. 📈 POWER SPECTRAL DENSITY (PSD)
-   • Frequency domain analysis of HRV
-   • Shows VLF, LF, and HF frequency bands
-   • Logarithmic power scale with band highlighting
-
-3. 📉 RR INTERVAL TIME SERIES
-   • Time-based view of heart rate variability
-   • Shows RR intervals over beat sequence
-   • Includes trend analysis and variability bands
-
-4. 🎛️  HRV DASHBOARD
-   • Comprehensive multi-panel view
-   • Combines all analysis types in one display
-   • Includes metrics summary table
-
-5. 🔗 COMBINED TIME SERIES
-   • Multi-subject comparison across SOL sessions
-   • Shows temporal trends for all HRV metrics
-   • Comparative analysis of crew members
-
-🎯 INSTRUCTIONS:
-
-1. First, run an HRV analysis using the "Analysis Controls" tab
-2. Once analysis is complete, return to this "Visualizations" tab
-3. Select a subject from the dropdown menu
-4. Click any plot generation button above
-5. Generated plots will open in your web browser
-6. Plot files are also saved locally for future reference
-
-💡 TIPS:
-
-• All plots are fully interactive (zoom, pan, hover for details)
-• HTML files can be shared or included in reports
-• Plots automatically open in your default web browser
-• Use "Generate All Plots" for complete visualization set
-
-Ready to visualize your HRV analysis results! 🚀
-
-"""
-            self.plot_preview_text.delete(1.0, tk.END)
-            self.plot_preview_text.insert(1.0, instructions)
+        pass
     
     def _update_plot_preview(self, plot_type, subject, file_path, rr_intervals):
         """Update the plot preview area with plot information."""
-        if hasattr(self, 'plot_preview_text'):
-            preview_text = f"""
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                           PLOT GENERATED SUCCESSFULLY                         ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-
-🎯 PLOT TYPE: {plot_type}
-👤 SUBJECT: {subject}
-📊 DATA POINTS: {len(rr_intervals)} RR intervals
-
-📁 FILE DETAILS:
-   • File: {file_path.name}
-   • Location: {file_path.parent.absolute()}
-   • Full Path: {file_path.absolute()}
-
-🌐 BROWSER STATUS:
-   • Plot automatically opened in default web browser
-   • Interactive features available (zoom, pan, hover)
-   • Full-screen responsive design
-
-📋 PLOT FEATURES:
-"""
-
-            if plot_type == "Poincaré Plot":
-                preview_text += """   • RR(n) vs RR(n+1) scatter plot
-   • Fitted ellipse showing variability distribution
-   • SD1 (short-term) and SD2 (long-term) measures
-   • Color-coded time progression option
-   • Individual beat hover information
-"""
-
-            elif plot_type == "Power Spectral Density":
-                preview_text += """   • Frequency domain analysis
-   • VLF, LF, and HF band highlighting
-   • Logarithmic power scale
-   • Interactive frequency band exploration
-   • Power values on hover
-"""
-
-            elif plot_type == "RR Interval Time Series":
-                preview_text += """   • Time-based RR interval progression
-   • Beat-by-beat variability visualization
-   • Optional trend line analysis
-   • Variability bands display
-   • Temporal pattern identification
-"""
-
-            elif plot_type == "HRV Dashboard":
-                preview_text += """   • Multi-panel comprehensive view
-   • All plot types in one display
-   • HRV metrics summary table
-   • Frequency band distribution
-   • Time vs frequency domain comparison
-"""
-
-            preview_text += f"""
-
-💡 USAGE TIPS:
-   • Use mouse wheel to zoom in/out
-   • Click and drag to pan around the plot
-   • Hover over data points for detailed information
-   • Use toolbar buttons for additional features
-   • Double-click to reset zoom
-   
-📤 SHARING:
-   • HTML file can be emailed or shared
-   • Works in any modern web browser
-   • No additional software required for viewing
-   • Preserves all interactive features
-
-✅ Plot generation completed successfully!
-Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-"""
-            
-            self.plot_preview_text.delete(1.0, tk.END)
-            self.plot_preview_text.insert(1.0, preview_text)
-        
+        pass
+    
     def _setup_stats_tab(self):
         """Setup the statistics display tab."""
         # Statistics text area
@@ -2233,173 +2118,32 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             logger.info("Updating plots display...")
             if not self.analysis_results:
                 logger.warning("No analysis results available for plots display")
-                # Still create the interface but with disabled state
-                self._create_disabled_plot_interface()
+                self.plot_subject_combo['values'] = ["No subjects analyzed"]
+                self.plot_subject_combo.set("No subjects analyzed")
                 return
-                
-            # Clear existing plots
-            self._clear_plots_display()
-            
-            logger.info(f"Creating plot controls for {len(self.analysis_results)} results")
-            
-            # Ensure the plots scrollable frame exists
-            if not hasattr(self, 'plots_scrollable_frame') or self.plots_scrollable_frame is None:
-                logger.error("plots_scrollable_frame not found! Attempting to recreate...")
-                self._setup_plots_tab()  # Recreate the plots tab
-            
-            # Create plot control interface
-            main_frame = ttk.Frame(self.plots_scrollable_frame)
-            main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=10, pady=10)
-            
-            # Title with emphasis
-            title_label = ttk.Label(main_frame, text="📊 HRV VISUALIZATIONS READY", 
-                                   style='Title.TLabel')
-            title_label.grid(row=0, column=0, columnspan=2, pady=(0, 10), sticky=tk.W)
-            
-            # Count subjects processed
-            subject_count = len([k for k in self.analysis_results.keys() if k not in ['clustering', 'forecasting']])
-            
-            # Success message
-            success_frame = ttk.Frame(main_frame)
-            success_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 15))
-            success_frame.configure(relief='raised', borderwidth=1)
-            
-            success_text = f"✅ ANALYSIS COMPLETE!\n\n"
-            success_text += f"📈 {subject_count} subjects/sessions processed successfully\n"
-            success_text += f"📊 {len(self.analysis_results)} datasets ready for visualization\n\n"
-            success_text += "🎯 INSTRUCTIONS:\n"
-            success_text += "1. Select a subject from the dropdown below\n"
-            success_text += "2. Click any plot generation button\n"
-            success_text += "3. Plots will open automatically in your web browser\n"
-            success_text += "4. HTML files are saved locally for future reference"
-            
-            success_label = ttk.Label(success_frame, text=success_text, justify=tk.LEFT,
-                                     background='#E8F5E8', foreground='#2E7D32', 
-                                     font=('Arial', 10))
-            success_label.grid(row=0, column=0, padx=10, pady=10, sticky=tk.W)
-            
-            # Subject selection for plots
-            selection_frame = ttk.LabelFrame(main_frame, text="Subject Selection", padding="10")
-            selection_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
-            
-            ttk.Label(selection_frame, text="Select Subject:", 
-                     style='Heading.TLabel').grid(row=0, column=0, sticky=tk.W, pady=5)
-            
-            # Get available subjects
-            subjects = [k for k in self.analysis_results.keys() if k not in ['clustering', 'forecasting']]
-            
-            # Create StringVar with explicit root reference to avoid "no default root window" error
-            self.plot_subject_var = tk.StringVar(master=self.root)
-            self.plot_subject_combo = ttk.Combobox(selection_frame, textvariable=self.plot_subject_var,
-                                                  values=subjects, state='readonly',
-                                                  font=('Arial', 10), width=30)
-            self.plot_subject_combo.grid(row=0, column=1, sticky=(tk.W, tk.E), pady=5, padx=(10, 0))
-            
+
+            # Populate subject combobox with only valid subjects for plotting
+            subjects = sorted([
+                key for key, result in self.analysis_results.items()
+                if isinstance(result, dict) and 'rr_intervals' in result
+            ])
+
+            if not subjects:
+                self.plot_subject_combo['values'] = ["No plot-able subjects found"]
+                self.plot_subject_combo.set("No plot-able subjects found")
+                return
+
+            self.plot_subject_combo['values'] = subjects
             if subjects:
-                self.plot_subject_combo.set(subjects[0])  # Set first subject as default
+                self.plot_subject_combo.set(subjects[0])
             
-            selection_frame.columnconfigure(1, weight=1)
-            
-            # Plot generation buttons with more prominent styling
-            button_frame = ttk.LabelFrame(main_frame, text="📊 PLOT GENERATION CONTROLS", padding="15")
-            button_frame.grid(row=3, column=0, columnspan=2, pady=15, sticky=(tk.W, tk.E))
-            button_frame.configure(relief='raised', borderwidth=3)
-            
-            # Individual plot buttons with better descriptions
-            ttk.Button(button_frame, text="🔵 Poincaré Plot\n(RR Interval Scatter)",
-                      command=self._generate_poincare_plot, 
-                      width=25, style='Primary.TButton').grid(row=0, column=0, padx=8, pady=8, sticky=(tk.W, tk.E))
-            
-            ttk.Button(button_frame, text="📈 PSD Plot\n(Frequency Analysis)", 
-                      command=self._generate_psd_plot, 
-                      width=25, style='Primary.TButton').grid(row=0, column=1, padx=8, pady=8, sticky=(tk.W, tk.E))
-                      
-            ttk.Button(button_frame, text="📉 Time Series\n(RR Intervals vs Time)",
-                      command=self._generate_timeseries_plot, 
-                      width=25, style='Primary.TButton').grid(row=1, column=0, padx=8, pady=8, sticky=(tk.W, tk.E))
-                      
-            ttk.Button(button_frame, text="🎛️ Full Dashboard\n(All Plots Combined)",
-                      command=self._generate_all_plots, 
-                      width=25, style='Primary.TButton').grid(row=1, column=1, padx=8, pady=8, sticky=(tk.W, tk.E))
-            
-            # Combined analysis button - more prominent
-            combined_frame = ttk.Frame(button_frame)
-            combined_frame.grid(row=2, column=0, columnspan=2, pady=(10, 0), sticky=(tk.W, tk.E))
-            
-            ttk.Button(combined_frame, text="🔗 GENERATE COMBINED TIME SERIES\n(All Subjects • All HRV Metrics • Comparative Analysis)",
-                      command=self._generate_combined_time_series, 
-                      style='Primary.TButton').grid(row=0, column=0, sticky=(tk.W, tk.E))
-            
-            combined_frame.columnconfigure(0, weight=1)
-            
-            # Configure button frame columns for proper resizing
-            button_frame.columnconfigure(0, weight=1)
-            button_frame.columnconfigure(1, weight=1)
-            
-            # Plot display area with better styling
-            self.plot_display_frame = ttk.LabelFrame(main_frame, text="📊 Plot Display & Status", 
-                                                    padding="15")
-            self.plot_display_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=15)
-            
-            initial_text = "🎯 SELECT A SUBJECT AND CLICK A PLOT BUTTON\n\n"
-            initial_text += "• All plots are interactive and open in your web browser\n"
-            initial_text += "• HTML files are saved locally for sharing and archiving\n" 
-            initial_text += "• Hover over data points for detailed information\n"
-            initial_text += "• Use browser zoom and pan controls for detailed exploration"
-            
-            self.plot_status_label = ttk.Label(self.plot_display_frame, 
-                                              text=initial_text,
-                                              justify=tk.LEFT,
-                                              font=('Arial', 10))
-            self.plot_status_label.grid(row=0, column=0, pady=10, sticky=(tk.W, tk.E))
-            
-            # Configure column weights for proper resizing
-            main_frame.columnconfigure(1, weight=1)
-            self.plots_scrollable_frame.columnconfigure(0, weight=1)
-            
-            # Force immediate GUI update
-            self.root.update_idletasks()
-            self.root.update()
-            
-            # Switch to plots tab to make buttons immediately visible
-            try:
-                self.results_notebook.select(1)  # Select plots tab (index 1)
-                logger.info("Automatically switched to plots tab")
-            except Exception as e:
-                logger.warning(f"Could not switch to plots tab: {e}")
-            
-            # Update the results notebook to ensure the plots tab is accessible
-            try:
-                self.results_notebook.tab(1, state="normal")  # Enable plots tab
-                # Add a visual indicator that plots are ready
-                self.results_notebook.tab(1, text="✅ Visualizations")
-            except Exception as e:
-                logger.warning(f"Could not update plots tab state: {e}")
-            
-            # Show a notification that buttons are ready
-            try:
-                self.root.bell()  # System sound notification
-            except:
-                pass
-            
-            logger.info("✅ PLOT CONTROLS CREATED SUCCESSFULLY!")
-            logger.info(f"📊 {subject_count} subjects available for visualization")
-            logger.info("🎯 Plot buttons should now be visible in the Visualizations tab")
+            logger.info(f"Populated plot controls for {len(subjects)} subjects")
             
         except Exception as e:
-            logger.error(f"❌ CRITICAL ERROR updating plots display: {e}")
-            import traceback
-            logger.error("Full traceback:")
-            logger.error(traceback.format_exc())
+            logger.error(f"Error updating plots display: {e}")
             
-            # Create emergency fallback interface
-            try:
-                self._create_emergency_plot_interface(str(e))
-            except:
-                logger.error("Failed to create emergency interface")
-    
     def _create_disabled_plot_interface(self):
-        """Create plot interface in disabled state when no analysis results."""
+        """Create a disabled state for the plot interface."""
         try:
             main_frame = ttk.Frame(self.plots_scrollable_frame)
             main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=10, pady=10)
@@ -2478,85 +2222,47 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             messagebox.showerror("Error", f"Emergency plot generation failed: {e}")
     
     def _clear_plots_display(self):
-        """Clear all widgets from the plots display."""
-        for widget in self.plots_scrollable_frame.winfo_children():
-            widget.destroy()
-        
-        # Restore placeholder
-        self.plots_placeholder = ttk.Label(self.plots_scrollable_frame, 
-                                          text="Run analysis first, then use plot controls to generate visualizations.",
-                                          justify=tk.CENTER)
-        self.plots_placeholder.grid(row=0, column=0, padx=20, pady=20)
-        
-        # Restore instructions in preview area
-        self._set_plot_preview_instructions()
+        """Clear the plot display area."""
+        pass
     
     def _clear_plot_buttons(self):
-        """Clear existing plot buttons to avoid overlap."""
-        for widget in self.plot_display_frame.winfo_children():
-            if isinstance(widget, ttk.Button) and widget != self.plot_status_label:
-                widget.destroy()
+        """Clear any dynamically added plot buttons."""
+        pass
     
     def _generate_poincare_plot(self):
         """Generate and display Poincaré plot."""
         try:
             selected_subject = self.plot_subject_var.get()
-            if not selected_subject or selected_subject not in self.analysis_results:
-                messagebox.showwarning("Warning", "Please select a valid subject")
+            if not self.analysis_results or not selected_subject or "No subject" in selected_subject:
+                messagebox.showwarning("Plotting Error", "Please run an analysis and select a subject first.")
                 return
-                
-            result = self.analysis_results[selected_subject]
-            if 'rr_intervals' not in result:
-                messagebox.showwarning("Warning", "No RR interval data available for selected subject")
+
+            result = self.analysis_results.get(selected_subject)
+            if not isinstance(result, dict) or 'rr_intervals' not in result:
+                messagebox.showwarning("Plotting Error", f"No plottable data found for '{selected_subject}'. It may be a summary entry.")
                 return
             
             rr_intervals = result['rr_intervals']
             
-            # Clear previous plot buttons
-            self._clear_plot_buttons()
-            
-            # Update status
             self.plot_status_label.configure(text=f"Generating Poincaré plot for {selected_subject}...")
             self.root.update_idletasks()
             
-            # Generate plot using interactive plotter
             fig = self.interactive_plotter.create_poincare_plot(
                 rr_intervals, 
                 title=f"Poincaré Plot - {selected_subject}"
             )
             
-            # Save plot with unique filename
             safe_subject = selected_subject.replace('/', '_').replace('\\', '_')
-            plot_path = Path(f"poincare_plot_{safe_subject}.html")
+            plots_dir = Path("plots_output")
+            plot_path = plots_dir / f"poincare_plot_{safe_subject}.html"
             export_success = self.interactive_plotter.export_html(fig, str(plot_path))
             
             if export_success:
-                # Update status with success message
-                success_text = f"✅ Poincaré plot generated for {selected_subject}\n\n"
-                success_text += f"📁 Plot saved as: {plot_path.absolute()}\n\n"
-                success_text += "📊 Plot details:\n"
-                success_text += "• SD1 (short-term variability) vs SD2 (long-term variability)\n"
-                success_text += "• Each point represents consecutive RR intervals\n"
-                success_text += "• Ellipse shows distribution pattern\n"
-                success_text += f"• Total RR intervals: {len(rr_intervals)}\n\n"
-                success_text += "🌐 The plot has been automatically opened in your browser."
-                
+                success_text = f"✅ Poincaré plot generated for {selected_subject} and saved to {plot_path.absolute()}"
                 self.plot_status_label.configure(text=success_text)
-                
-                # Update plot preview area
-                self._update_plot_preview("Poincaré Plot", selected_subject, plot_path, rr_intervals)
-                
-                # Add button to open plot
-                open_button = ttk.Button(self.plot_display_frame, text="🌐 Open in Browser",
-                                       command=lambda: self._open_plot_file(plot_path))
-                open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
-                
-                # Automatically open the plot
                 self._open_plot_file(plot_path)
-                
             else:
-                error_text = f"❌ Failed to generate Poincaré plot for {selected_subject}\n"
-                error_text += "Check the log file for details."
+                error_text = f"❌ Failed to generate Poincaré plot for {selected_subject}"
                 self.plot_status_label.configure(text=error_text)
             
         except Exception as e:
@@ -2567,62 +2273,36 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         """Generate and display Power Spectral Density plot."""
         try:
             selected_subject = self.plot_subject_var.get()
-            if not selected_subject or selected_subject not in self.analysis_results:
-                messagebox.showwarning("Warning", "Please select a valid subject")
+            if not self.analysis_results or not selected_subject or "No subject" in selected_subject:
+                messagebox.showwarning("Plotting Error", "Please run an analysis and select a subject first.")
                 return
-                
-            result = self.analysis_results[selected_subject]
-            if 'rr_intervals' not in result:
-                messagebox.showwarning("Warning", "No RR interval data available for selected subject")
+
+            result = self.analysis_results.get(selected_subject)
+            if not isinstance(result, dict) or 'rr_intervals' not in result:
+                messagebox.showwarning("Plotting Error", f"No plottable data found for '{selected_subject}'. It may be a summary entry.")
                 return
             
             rr_intervals = result['rr_intervals']
             
-            # Clear previous plot buttons
-            self._clear_plot_buttons()
-            
-            # Update status
             self.plot_status_label.configure(text=f"Generating PSD plot for {selected_subject}...")
             self.root.update_idletasks()
             
-            # Generate plot
             fig = self.interactive_plotter.create_psd_plot(
                 rr_intervals,
                 title=f"Power Spectral Density - {selected_subject}"
             )
             
-            # Save plot with unique filename
             safe_subject = selected_subject.replace('/', '_').replace('\\', '_')
-            plot_path = Path(f"psd_plot_{safe_subject}.html")
+            plots_dir = Path("plots_output")
+            plot_path = plots_dir / f"psd_plot_{safe_subject}.html"
             export_success = self.interactive_plotter.export_html(fig, str(plot_path))
             
             if export_success:
-                # Update status
-                success_text = f"✅ Power Spectral Density plot generated for {selected_subject}\n\n"
-                success_text += f"📁 Plot saved as: {plot_path.absolute()}\n\n"
-                success_text += "📊 Frequency bands analyzed:\n"
-                success_text += "• VLF: 0.003-0.04 Hz (Very Low Frequency)\n"
-                success_text += "• LF: 0.04-0.15 Hz (Low Frequency)\n"
-                success_text += "• HF: 0.15-0.4 Hz (High Frequency)\n"
-                success_text += f"• Total RR intervals: {len(rr_intervals)}\n\n"
-                success_text += "🌐 The plot has been automatically opened in your browser."
-                
+                success_text = f"✅ PSD plot generated for {selected_subject} and saved to {plot_path.absolute()}"
                 self.plot_status_label.configure(text=success_text)
-                
-                # Update plot preview area
-                self._update_plot_preview("Power Spectral Density", selected_subject, plot_path, rr_intervals)
-                
-                # Add button to open plot
-                open_button = ttk.Button(self.plot_display_frame, text="🌐 Open in Browser",
-                                       command=lambda: self._open_plot_file(plot_path))
-                open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
-                
-                # Automatically open the plot
                 self._open_plot_file(plot_path)
-                
             else:
-                error_text = f"❌ Failed to generate PSD plot for {selected_subject}\n"
-                error_text += "Check the log file for details."
+                error_text = f"❌ Failed to generate PSD plot for {selected_subject}"
                 self.plot_status_label.configure(text=error_text)
             
         except Exception as e:
@@ -2633,62 +2313,36 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         """Generate and display RR interval time series plot."""
         try:
             selected_subject = self.plot_subject_var.get()
-            if not selected_subject or selected_subject not in self.analysis_results:
-                messagebox.showwarning("Warning", "Please select a valid subject")
+            if not self.analysis_results or not selected_subject or "No subject" in selected_subject:
+                messagebox.showwarning("Plotting Error", "Please run an analysis and select a subject first.")
                 return
-                
-            result = self.analysis_results[selected_subject]
-            if 'rr_intervals' not in result:
-                messagebox.showwarning("Warning", "No RR interval data available for selected subject")
+
+            result = self.analysis_results.get(selected_subject)
+            if not isinstance(result, dict) or 'rr_intervals' not in result:
+                messagebox.showwarning("Plotting Error", f"No plottable data found for '{selected_subject}'. It may be a summary entry.")
                 return
             
             rr_intervals = result['rr_intervals']
             
-            # Clear previous plot buttons
-            self._clear_plot_buttons()
-            
-            # Update status
             self.plot_status_label.configure(text=f"Generating time series plot for {selected_subject}...")
             self.root.update_idletasks()
             
-            # Generate plot
             fig = self.interactive_plotter.create_time_series_plot(
                 rr_intervals,
                 title=f"RR Interval Time Series - {selected_subject}"
             )
             
-            # Save plot with unique filename
             safe_subject = selected_subject.replace('/', '_').replace('\\', '_')
-            plot_path = Path(f"timeseries_plot_{safe_subject}.html")
+            plots_dir = Path("plots_output")
+            plot_path = plots_dir / f"timeseries_plot_{safe_subject}.html"
             export_success = self.interactive_plotter.export_html(fig, str(plot_path))
             
             if export_success:
-                # Update status
-                success_text = f"✅ RR interval time series plot generated for {selected_subject}\n\n"
-                success_text += f"📁 Plot saved as: {plot_path.absolute()}\n\n"
-                success_text += "📊 Visualization features:\n"
-                success_text += "• RR interval values over beat sequence\n"
-                success_text += "• Heart rate variability patterns\n"
-                success_text += "• Trend analysis and variability bands\n"
-                success_text += f"• Total RR intervals: {len(rr_intervals)}\n\n"
-                success_text += "🌐 The plot has been automatically opened in your browser."
-                
+                success_text = f"✅ Time series plot generated for {selected_subject} and saved to {plot_path.absolute()}"
                 self.plot_status_label.configure(text=success_text)
-                
-                # Update plot preview area
-                self._update_plot_preview("RR Interval Time Series", selected_subject, plot_path, rr_intervals)
-                
-                # Add button to open plot
-                open_button = ttk.Button(self.plot_display_frame, text="🌐 Open in Browser",
-                                       command=lambda: self._open_plot_file(plot_path))
-                open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
-                
-                # Automatically open the plot
                 self._open_plot_file(plot_path)
-                
             else:
-                error_text = f"❌ Failed to generate time series plot for {selected_subject}\n"
-                error_text += "Check the log file for details."
+                error_text = f"❌ Failed to generate time series plot for {selected_subject}"
                 self.plot_status_label.configure(text=error_text)
             
         except Exception as e:
@@ -2699,27 +2353,21 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         """Generate all available plots for the selected subject."""
         try:
             selected_subject = self.plot_subject_var.get()
-            if not selected_subject or selected_subject not in self.analysis_results:
-                messagebox.showwarning("Warning", "Please select a valid subject")
+            if not self.analysis_results or not selected_subject or "No subject" in selected_subject:
+                messagebox.showwarning("Plotting Error", "Please run an analysis and select a subject first.")
+                return
+
+            result = self.analysis_results.get(selected_subject)
+            if not isinstance(result, dict) or 'rr_intervals' not in result:
+                messagebox.showwarning("Plotting Error", f"No plottable data found for '{selected_subject}'. It may be a summary entry.")
                 return
             
-            # Clear previous plot buttons
-            self._clear_plot_buttons()
-            
-            # Update status
             self.plot_status_label.configure(text=f"Generating comprehensive dashboard for {selected_subject}...")
             self.root.update_idletasks()
-            
-            # Generate dashboard with all plots
-            result = self.analysis_results[selected_subject]
-            if 'rr_intervals' not in result:
-                messagebox.showwarning("Warning", "No RR interval data available for selected subject")
-                return
             
             rr_intervals = result['rr_intervals']
             hrv_results = result.get('hrv_results', {})
             
-            # Create comprehensive dashboard
             dashboard_fig = self.interactive_plotter.create_hrv_dashboard(
                 rr_intervals,
                 hrv_results,
@@ -2727,29 +2375,15 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 session_id="Analysis"
             )
             
-            # Save dashboard with unique filename
             safe_subject = selected_subject.replace('/', '_').replace('\\', '_')
-            dashboard_path = Path(f"hrv_dashboard_{safe_subject}.html")
+            plots_dir = Path("plots_output")
+            dashboard_path = plots_dir / f"hrv_dashboard_{safe_subject}.html"
             self.interactive_plotter.export_html(dashboard_fig, str(dashboard_path))
             
-            # Update status
-            success_text = f"✅ HRV Analysis Dashboard generated for {selected_subject}\n\n"
-            success_text += f"Comprehensive dashboard saved as:\n{dashboard_path.absolute()}\n\n"
-            success_text += "Includes:\n"
-            success_text += "• RR interval time series\n"
-            success_text += "• Poincaré plot with ellipse\n"
-            success_text += "• Power spectral density\n"
-            success_text += "• HRV metrics summary\n"
-            success_text += "• Frequency band distribution\n"
-            success_text += "• Time vs frequency domain correlation\n\n"
-            success_text += "Open the HTML file in your browser for the full interactive dashboard."
-            
+            success_text = f"✅ HRV Analysis Dashboard generated for {selected_subject} and saved to {dashboard_path.absolute()}"
             self.plot_status_label.configure(text=success_text)
             
-            # Add button to open dashboard
-            open_button = ttk.Button(self.plot_display_frame, text="Open HRV Dashboard",
-                                   command=lambda: self._open_plot_file(dashboard_path))
-            open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
+            self._open_plot_file(dashboard_path)
             
         except Exception as e:
             logger.error(f"Error generating HRV dashboard: {e}")
@@ -2771,105 +2405,65 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 analysis_results=self.analysis_results
             )
             
-            # Clear any existing buttons from previous plots first
-            self._clear_plot_buttons()
-            
             # Save the combined analysis with unique filename
-            plot_path = Path("hrv_combined_time_series_analysis.html")
+            plot_path = Path("plots_output") / "hrv_combined_time_series_analysis.html"
             self.interactive_plotter.export_html(combined_fig, str(plot_path))
             
             # Update status with success message
-            success_text = "✅ Combined Time Series Analysis Generated!\n\n"
-            success_text += f"Comprehensive analysis saved as:\n{plot_path.absolute()}\n\n"
-            success_text += "📊 Features:\n"
-            success_text += "• Time series for all key HRV metrics\n"
-            success_text += "• All subjects compared across SOL sessions\n"
-            success_text += "• Individual trend lines (dashed) for each subject\n"
-            success_text += "• Interactive visualization with hover details\n\n"
-            success_text += "📈 Metrics included:\n"
-            success_text += "• Time Domain: SDNN, RMSSD, pNN50, Mean HR\n"
-            success_text += "• Frequency Domain: LF Power, HF Power, LF/HF Ratio, LF nu, HF nu\n\n"
-            success_text += "🔍 Insights:\n"
-            success_text += "• Compare adaptation patterns between subjects\n"
-            success_text += "• Identify trends across space simulation timeline\n"
-            success_text += "• Analyze individual vs group responses\n\n"
-            success_text += "Open the HTML file in your browser for full-screen responsive interactive analysis!"
-            
+            success_text = "✅ Combined Time Series Analysis Generated!\n"
+            success_text += f"Comprehensive analysis saved as: {plot_path.absolute()}"
             self.plot_status_label.configure(text=success_text)
-            
-            # Add button to open the combined analysis
-            open_button = ttk.Button(self.plot_display_frame, text="Open Combined Time Series",
-                                   command=lambda: self._open_plot_file(plot_path))
-            open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
-            
-            # Add button to generate custom metrics selection
-            custom_button = ttk.Button(self.plot_display_frame, text="Custom Metrics Selection",
-                                     command=self._generate_custom_time_series)
-            custom_button.grid(row=2, column=0, pady=5, sticky=(tk.W, tk.E))
+
+            # Automatically open the plot
+            self._open_plot_file(plot_path)
             
         except Exception as e:
-            logger.error(f"Error generating combined time series: {e}")
-            self.plot_status_label.configure(text=f"Error generating combined time series: {e}")
+            logger.error(f"Error in combined time series generation: {e}")
+            messagebox.showerror("Error", f"Error generating combined time series: {e}")
     
     def _generate_custom_time_series(self):
-        """Generate time series with custom metric selection."""
+        """Generate custom time series plot based on user selection."""
         try:
-            # Available metrics
-            available_metrics = [
-                'time_domain_sdnn', 'time_domain_rmssd', 'time_domain_pnn50', 'time_domain_mean_hr',
-                'time_domain_cvnn', 'frequency_domain_lf_power', 'frequency_domain_hf_power',
-                'frequency_domain_lf_hf_ratio', 'frequency_domain_lf_nu', 'frequency_domain_hf_nu',
-                'frequency_domain_total_power', 'nonlinear_sd1', 'nonlinear_sd2', 'nonlinear_dfa_alpha1'
-            ]
-            
-            # Create custom dialog for metric selection
+            if not self.analysis_results:
+                messagebox.showwarning("Warning", "No analysis results available")
+                return
+
             custom_dialog = tk.Toplevel(self.root)
-            custom_dialog.title("Select HRV Metrics for Time Series Analysis")
-            custom_dialog.geometry("500x400")
+            custom_dialog.title("Select Metrics for Time Series")
+            custom_dialog.geometry("400x500")
             custom_dialog.transient(self.root)
             custom_dialog.grab_set()
+
+            ttk.Label(custom_dialog, text="Select metrics to plot:", font=('Helvetica', 12, 'bold')).pack(pady=10)
+
+            # --- Button Frame ---
+            button_frame = ttk.Frame(custom_dialog)
+            button_frame.pack(side=tk.BOTTOM, pady=10, fill=tk.X, padx=10)
+            button_frame.columnconfigure((0, 1), weight=1)
+
+            # --- Scrollable List Frame ---
+            list_container = ttk.Frame(custom_dialog)
+            list_container.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10)
             
-            # Instructions
-            ttk.Label(custom_dialog, 
-                     text="Select HRV metrics to include in the time series analysis:",
-                     style='Heading.TLabel').pack(pady=10)
-            
-            # Scrollable frame for checkboxes
-            canvas = tk.Canvas(custom_dialog)
-            scrollbar = ttk.Scrollbar(custom_dialog, orient="vertical", command=canvas.yview)
+            canvas = tk.Canvas(list_container)
+            scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=canvas.yview)
             scrollable_frame = ttk.Frame(canvas)
-            
-            scrollable_frame.bind(
-                "<Configure>",
-                lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-            )
-            
+
+            scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
             canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
             canvas.configure(yscrollcommand=scrollbar.set)
-            
-            # Metric selection variables
-            metric_vars = {}
-            for metric in available_metrics:
-                var = tk.BooleanVar()
-                # Default selection for common metrics
-                if metric in ['time_domain_sdnn', 'time_domain_rmssd', 'frequency_domain_lf_hf_ratio']:
-                    var.set(True)
-                
-                metric_vars[metric] = var
-                
-                # Create nice display name
-                display_name = metric.replace('_', ' ').title()
-                display_name = display_name.replace('Time Domain', 'TD:').replace('Frequency Domain', 'FD:').replace('Nonlinear', 'NL:')
-                
-                ttk.Checkbutton(scrollable_frame, text=display_name, variable=var).pack(anchor='w', padx=10, pady=2)
-            
-            canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+
+            canvas.pack(side="left", fill="both", expand=True)
             scrollbar.pack(side="right", fill="y")
-            
-            # Buttons
-            button_frame = ttk.Frame(custom_dialog)
-            button_frame.pack(pady=10)
-            
+
+            available_metrics = self.interactive_plotter.get_available_metrics(self.analysis_results)
+            metric_vars = {}
+            for metric in sorted(available_metrics):
+                var = tk.BooleanVar(master=self.root)
+                chk = ttk.Checkbutton(scrollable_frame, text=metric, variable=var)
+                chk.pack(anchor=tk.W, padx=10, pady=2)
+                metric_vars[metric] = var
+
             def generate_custom_plot():
                 selected_metrics = [metric for metric, var in metric_vars.items() if var.get()]
                 
@@ -2879,45 +2473,175 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 
                 custom_dialog.destroy()
                 
-                # Update status
                 self.plot_status_label.configure(text=f"Generating custom time series for {len(selected_metrics)} metrics...")
                 self.root.update_idletasks()
                 
-                # Generate custom analysis
                 custom_fig = self.interactive_plotter.create_combined_time_series_analysis(
                     analysis_results=self.analysis_results,
                     metrics_to_plot=selected_metrics
                 )
                 
-                # Save custom analysis
-                plot_path = Path("hrv_custom_time_series_analysis.html")
+                plot_path = Path("plots_output") / "hrv_custom_time_series_analysis.html"
                 self.interactive_plotter.export_html(custom_fig, str(plot_path))
                 
-                # Update status
-                success_text = f"✅ Custom Time Series Analysis Generated!\n\n"
-                success_text += f"Analysis with {len(selected_metrics)} metrics saved as:\n{plot_path.absolute()}\n\n"
-                success_text += "📊 Your selected metrics are displayed across all subjects and SOL sessions.\n"
-                success_text += "Open the HTML file in your browser for the interactive analysis."
-                
+                success_text = f"✅ Custom Time Series Analysis Generated!\n"
+                success_text += f"Analysis saved as: {plot_path.absolute()}"
                 self.plot_status_label.configure(text=success_text)
-                
-                # Clear existing buttons and add new one
-                self._clear_plot_buttons()
-                
-                open_button = ttk.Button(self.plot_display_frame, text="Open Custom Time Series",
-                                       command=lambda: self._open_plot_file(plot_path))
-                open_button.grid(row=1, column=0, pady=5, sticky=(tk.W, tk.E))
+
+                self._open_plot_file(plot_path)
             
             def cancel_dialog():
                 custom_dialog.destroy()
             
-            ttk.Button(button_frame, text="Generate Plot", command=generate_custom_plot).pack(side=tk.LEFT, padx=5)
-            ttk.Button(button_frame, text="Cancel", command=cancel_dialog).pack(side=tk.LEFT, padx=5)
+            ttk.Button(button_frame, text="Generate Plot", command=generate_custom_plot).grid(row=0, column=0, padx=5, sticky="ew")
+            ttk.Button(button_frame, text="Cancel", command=cancel_dialog).grid(row=0, column=1, padx=5, sticky="ew")
             
         except Exception as e:
             logger.error(f"Error in custom time series generation: {e}")
             messagebox.showerror("Error", f"Error generating custom time series: {e}")
     
+    def _generate_gam_crew_analysis(self):
+        """Generate GAM (Generalized Additive Model) analysis for crew-wide trends."""
+        try:
+            if not self.analysis_results:
+                messagebox.showwarning("Warning", "No analysis results available for GAM analysis")
+                return
+
+            self.plot_status_label.configure(text="Generating GAM crew analysis with trend lines and confidence intervals...")
+            self.root.update_idletasks()
+
+            # Generate GAM analysis for key HRV metrics
+            gam_fig = self.interactive_plotter.create_gam_crew_analysis(
+                analysis_results=self.analysis_results,
+                metrics_to_plot=[
+                    'time_domain_rmssd', 'time_domain_sdnn', 'time_domain_pnn50',
+                    'frequency_domain_lf_power', 'frequency_domain_hf_power', 
+                    'frequency_domain_lf_hf_ratio'
+                ],
+                show_individual_points=True,
+                show_crew_median=True,
+                confidence_level=0.95
+            )
+
+            plot_path = Path("plots_output") / "hrv_gam_crew_analysis.html"
+            self.interactive_plotter.export_html(gam_fig, str(plot_path))
+
+            success_text = f"✅ GAM Crew Analysis Generated!\n"
+            success_text += f"Professional analysis with trend lines and confidence intervals\n"
+            success_text += f"Analysis saved as: {plot_path.absolute()}"
+            self.plot_status_label.configure(text=success_text)
+
+            self._open_plot_file(plot_path)
+
+        except Exception as e:
+            logger.error(f"Error in GAM crew analysis generation: {e}")
+            messagebox.showerror("Error", f"Error generating GAM crew analysis: {e}")
+    
+    def _generate_gam_custom_analysis(self):
+        """Generate custom GAM analysis with user-selected metrics."""
+        try:
+            if not self.analysis_results:
+                messagebox.showwarning("Warning", "No analysis results available")
+                return
+
+            custom_dialog = tk.Toplevel(self.root)
+            custom_dialog.title("GAM Analysis - Select Metrics")
+            custom_dialog.geometry("450x550")
+            custom_dialog.transient(self.root)
+            custom_dialog.grab_set()
+
+            # Header
+            header_label = ttk.Label(custom_dialog, 
+                                   text="Select metrics for GAM crew analysis:",
+                                   font=('Helvetica', 12, 'bold'))
+            header_label.pack(pady=10)
+
+            # Info label
+            info_label = ttk.Label(custom_dialog,
+                                 text="GAM analysis provides trend lines with confidence intervals",
+                                 font=('Helvetica', 9),
+                                 foreground='#555555')
+            info_label.pack(pady=(0, 10))
+
+            # --- Button Frame ---
+            button_frame = ttk.Frame(custom_dialog)
+            button_frame.pack(side=tk.BOTTOM, pady=10, fill=tk.X, padx=10)
+            button_frame.columnconfigure((0, 1), weight=1)
+
+            # --- Scrollable List Frame ---
+            list_container = ttk.Frame(custom_dialog)
+            list_container.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10)
+            
+            canvas = tk.Canvas(list_container)
+            scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=canvas.yview)
+            scrollable_frame = ttk.Frame(canvas)
+
+            scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+
+            available_metrics = self.interactive_plotter.get_available_metrics(self.analysis_results)
+            metric_vars = {}
+            
+            # Pre-select key metrics
+            recommended_metrics = {
+                'time_domain_rmssd', 'time_domain_sdnn', 'time_domain_pnn50',
+                'frequency_domain_lf_power', 'frequency_domain_hf_power'
+            }
+            
+            for metric in sorted(available_metrics):
+                var = tk.BooleanVar(master=self.root)
+                # Pre-select recommended metrics
+                if metric in recommended_metrics:
+                    var.set(True)
+                
+                chk = ttk.Checkbutton(scrollable_frame, text=metric, variable=var)
+                chk.pack(anchor=tk.W, padx=10, pady=2)
+                metric_vars[metric] = var
+
+            def generate_gam_plot():
+                selected_metrics = [metric for metric, var in metric_vars.items() if var.get()]
+                
+                if not selected_metrics:
+                    messagebox.showwarning("Warning", "Please select at least one metric")
+                    return
+                
+                custom_dialog.destroy()
+                
+                self.plot_status_label.configure(text=f"Generating GAM analysis for {len(selected_metrics)} metrics...")
+                self.root.update_idletasks()
+                
+                gam_fig = self.interactive_plotter.create_gam_crew_analysis(
+                    analysis_results=self.analysis_results,
+                    metrics_to_plot=selected_metrics,
+                    show_individual_points=True,
+                    show_crew_median=True,
+                    confidence_level=0.95
+                )
+                
+                plot_path = Path("plots_output") / "hrv_gam_custom_analysis.html"
+                self.interactive_plotter.export_html(gam_fig, str(plot_path))
+                
+                success_text = f"✅ GAM Custom Analysis Generated!\n"
+                success_text += f"Advanced statistical analysis with {len(selected_metrics)} metrics\n"
+                success_text += f"Analysis saved as: {plot_path.absolute()}"
+                self.plot_status_label.configure(text=success_text)
+
+                self._open_plot_file(plot_path)
+            
+            def cancel_dialog():
+                custom_dialog.destroy()
+            
+            ttk.Button(button_frame, text="Generate GAM Analysis", command=generate_gam_plot).grid(row=0, column=0, padx=5, sticky="ew")
+            ttk.Button(button_frame, text="Cancel", command=cancel_dialog).grid(row=0, column=1, padx=5, sticky="ew")
+            
+        except Exception as e:
+            logger.error(f"Error in GAM custom analysis generation: {e}")
+            messagebox.showerror("Error", f"Error generating GAM custom analysis: {e}")
+
     def _open_plot_file(self, file_path):
         """Open plot file in default browser."""
         try:

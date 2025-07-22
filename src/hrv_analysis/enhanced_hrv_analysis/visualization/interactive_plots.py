@@ -26,6 +26,19 @@ from dataclasses import dataclass
 from pathlib import Path
 import json
 
+# Enhanced statistical modeling for GAM analysis
+try:
+    from statsmodels.gam.api import GLMGam, BSplines
+    from statsmodels.genmod.families import Gaussian
+    import statsmodels.api as sm
+    GAM_AVAILABLE = True
+    logger = logging.getLogger(__name__)
+    logger.info("GAM analysis capabilities enabled with statsmodels")
+except ImportError:
+    GAM_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("GAM analysis not available - install statsmodels for advanced trend analysis")
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -107,10 +120,10 @@ class InteractivePlotter:
             })
         
         return layout_config
-        
-    def create_poincare_plot(self, 
+    
+    def create_poincare_plot(self,
                            rr_intervals: np.ndarray,
-                           title: str = "Poincaré Plot",
+                           title: str = "",
                            show_ellipse: bool = True,
                            show_grid: bool = True,
                            color_by_time: bool = False) -> go.Figure:
@@ -213,9 +226,12 @@ class InteractivePlotter:
             layout_config = self._get_responsive_layout()
             layout_config.update({
                 'title': dict(
-                    text=title,
-                    x=0.5,
-                    font=dict(size=self.font_size + 4)
+                    text="Poincaré Plot",
+                    x=0.02,
+                    y=0.98,
+                    xanchor='left',
+                    yanchor='top',
+                    font=dict(size=12, color="#666666")
                 ),
                 'xaxis_title': "RR(n) [ms]",
                 'yaxis_title': "RR(n+1) [ms]",
@@ -241,7 +257,7 @@ class InteractivePlotter:
                        rr_intervals: np.ndarray,
                        method: str = 'welch',
                        sampling_rate: float = 4.0,
-                       title: str = "Power Spectral Density",
+                       title: str = "",
                        show_bands: bool = True,
                        log_scale: bool = True) -> go.Figure:
         """
@@ -353,9 +369,12 @@ class InteractivePlotter:
             layout_config = self._get_responsive_layout()
             layout_config.update({
                 'title': dict(
-                    text=title,
-                    x=0.5,
-                    font=dict(size=self.font_size + 4)
+                    text="Power Spectral Density",
+                    x=0.02,
+                    y=0.98,
+                    xanchor='left',
+                    yanchor='top',
+                    font=dict(size=12, color="#666666")
                 ),
                 'xaxis_title': "Frequency [Hz]",
                 'yaxis_title': "Power [ms²/Hz]",
@@ -426,7 +445,6 @@ class InteractivePlotter:
             
             fig = make_subplots(
                 rows=rows, cols=cols,
-                subplot_titles=subplot_titles,
                 vertical_spacing=0.08,
                 horizontal_spacing=0.08
             )
@@ -487,9 +505,12 @@ class InteractivePlotter:
             layout_config = self._get_responsive_layout(height=calculated_height)
             layout_config.update({
                 'title': dict(
-                    text="Combined HRV Time Series Analysis - All Subjects Across SOL Sessions",
-                    x=0.5,
-                    font=dict(size=16)
+                    text="HRV Time Series",
+                    x=0.02,
+                    y=0.98,
+                    xanchor='left',
+                    yanchor='top',
+                    font=dict(size=12, color="#666666")
                 ),
                 'showlegend': True,
                 'legend': dict(
@@ -523,6 +544,378 @@ class InteractivePlotter:
             logger.error(f"Error creating combined time series analysis: {e}")
             return self._create_error_figure(f"Error creating time series analysis: {e}")
     
+    def create_gam_crew_analysis(self,
+                               analysis_results: Dict[str, Any],
+                               metrics_to_plot: List[str] = None,
+                               subjects_to_include: List[str] = None,
+                               show_individual_points: bool = True,
+                               show_crew_median: bool = True,
+                               confidence_level: float = 0.95) -> go.Figure:
+        """
+        Create GAM (Generalized Additive Model) analysis for crew-wide HRV trends.
+        
+        This creates professional time series plots with:
+        - Individual subject data points (colored by subject)
+        - GAM trend line for the entire crew
+        - Confidence intervals around the trend
+        - Crew median calculation over time
+        - Professional styling matching aerospace research standards
+        
+        Args:
+            analysis_results: Complete analysis results from HRV analysis
+            metrics_to_plot: List of specific metrics to plot
+            subjects_to_include: List of subjects to include
+            show_individual_points: Whether to show individual subject data points
+            show_crew_median: Whether to show crew median trend
+            confidence_level: Confidence level for GAM intervals (default 95%)
+            
+        Returns:
+            Plotly figure with GAM crew analysis
+        """
+        try:
+            # Default to key HRV metrics if none specified
+            if metrics_to_plot is None:
+                metrics_to_plot = [
+                    'time_domain_rmssd', 'time_domain_sdnn', 'time_domain_pnn50',
+                    'frequency_domain_lf_power', 'frequency_domain_hf_power', 
+                    'frequency_domain_lf_hf_ratio'
+                ]
+            
+            # Extract time series data
+            time_series_data = self._extract_time_series_data(analysis_results, subjects_to_include)
+            
+            if not time_series_data:
+                return self._create_error_figure("No time series data available for GAM analysis")
+            
+            # Filter to metrics with data
+            valid_metrics = [m for m in metrics_to_plot if self._metric_has_data(m, time_series_data)]
+            
+            if not valid_metrics:
+                return self._create_error_figure("No valid metrics found for GAM analysis")
+            
+            # Calculate layout: prefer 2-3 columns for better readability
+            n_metrics = len(valid_metrics)
+            cols = min(3, n_metrics)
+            rows = (n_metrics + cols - 1) // cols
+            
+            # Create subplot titles
+            subplot_titles = [self._format_metric_title_professional(metric) for metric in valid_metrics]
+            
+            fig = make_subplots(
+                rows=rows, cols=cols,
+                vertical_spacing=0.12,
+                horizontal_spacing=0.10
+            )
+            
+            # Define professional color palette for subjects
+            subject_colors = self._get_subject_color_palette(list(time_series_data.keys()))
+            
+            # Process each metric
+            for idx, metric in enumerate(valid_metrics):
+                row = (idx // cols) + 1
+                col = (idx % cols) + 1
+                
+                # Collect all data points for this metric across all subjects
+                all_sols = []
+                all_values = []
+                subject_labels = []
+                
+                # Individual subject data
+                for subject in time_series_data:
+                    if metric in time_series_data[subject]:
+                        subject_data = time_series_data[subject][metric]
+                        if len(subject_data['sols']) > 0:
+                            all_sols.extend(subject_data['sols'])
+                            all_values.extend(subject_data['values'])
+                            subject_labels.extend([subject] * len(subject_data['sols']))
+                            
+                            # Add individual subject points if requested
+                            if show_individual_points:
+                                fig.add_trace(
+                                    go.Scatter(
+                                        x=subject_data['sols'],
+                                        y=subject_data['values'],
+                                        mode='markers',
+                                        marker=dict(
+                                            color=subject_colors[subject],
+                                            size=8,
+                                            opacity=0.7,
+                                            line=dict(width=1, color='rgba(0,0,0,0.3)')
+                                        ),
+                                        name=subject,
+                                        showlegend=(idx == 0),  # Only show legend on first subplot
+                                        hovertemplate=f'<b>{subject}</b><br>SOL: %{{x}}<br>{subplot_titles[idx]}: %{{y:.2f}}<extra></extra>'
+                                    ),
+                                    row=row, col=col
+                                )
+                
+                if len(all_sols) >= 3:  # Need minimum data points for GAM
+                    # Convert to arrays for analysis
+                    sols_array = np.array(all_sols)
+                    values_array = np.array(all_values)
+                    
+                    # Calculate crew median at each SOL if requested
+                    if show_crew_median:
+                        median_data = self._calculate_crew_median_by_sol(
+                            time_series_data, metric
+                        )
+                        
+                        if median_data['sols'] and len(median_data['sols']) > 0:
+                            fig.add_trace(
+                                go.Scatter(
+                                    x=median_data['sols'],
+                                    y=median_data['medians'],
+                                    mode='markers',
+                                    marker=dict(
+                                        color='black',
+                                        size=10,
+                                        symbol='diamond',
+                                        line=dict(width=2, color='white')
+                                    ),
+                                    name='Crew Median',
+                                    showlegend=(idx == 0),
+                                    hovertemplate=f'<b>Crew Median</b><br>SOL: %{{x}}<br>{subplot_titles[idx]}: %{{y:.2f}}<extra></extra>'
+                                ),
+                                row=row, col=col
+                            )
+                    
+                    # Fit GAM model and add trend line with confidence intervals
+                    gam_data = self._fit_gam_model(sols_array, values_array, confidence_level)
+                    
+                    if gam_data is not None:
+                        # Add confidence interval first (so it appears behind the line)
+                        fig.add_trace(
+                            go.Scatter(
+                                x=np.concatenate([gam_data['x_smooth'], gam_data['x_smooth'][::-1]]),
+                                y=np.concatenate([gam_data['upper_ci'], gam_data['lower_ci'][::-1]]),
+                                fill='toself',
+                                fillcolor='rgba(65, 105, 225, 0.2)',  # Light blue
+                                line=dict(color='rgba(255,255,255,0)'),
+                                showlegend=(idx == 0),
+                                name=f'{int(confidence_level*100)}% Confidence Interval',
+                                hoverinfo='skip'
+                            ),
+                            row=row, col=col
+                        )
+                        
+                        # Add GAM trend line
+                        fig.add_trace(
+                            go.Scatter(
+                                x=gam_data['x_smooth'],
+                                y=gam_data['y_smooth'],
+                                mode='lines',
+                                line=dict(
+                                    color='rgb(65, 105, 225)',  # Professional blue
+                                    width=3
+                                ),
+                                name='GAM Trend',
+                                showlegend=(idx == 0),
+                                hovertemplate=f'<b>GAM Trend</b><br>SOL: %{{x}}<br>{subplot_titles[idx]}: %{{y:.2f}}<extra></extra>'
+                            ),
+                            row=row, col=col
+                        )
+            
+            # Professional layout configuration
+            layout_config = self._get_responsive_layout(height=300 * rows)
+            layout_config.update({
+                'title': dict(
+                    text="Crew HRV Trends",
+                    x=0.02,
+                    y=0.98,
+                    xanchor='left',
+                    yanchor='top',
+                    font=dict(size=12, color="#666666")
+                ),
+                'showlegend': True,
+                'legend': dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="center",
+                    x=0.5,
+                    font=dict(size=11)
+                ),
+                'plot_bgcolor': 'white',
+                'paper_bgcolor': 'white',
+                'font': dict(
+                    family="Arial, sans-serif",
+                    size=11,
+                    color="#2c3e50"
+                )
+            })
+            
+            fig.update_layout(**layout_config)
+            
+            # Update axes with professional styling
+            for i in range(1, rows + 1):
+                for j in range(1, cols + 1):
+                    fig.update_xaxes(
+                        title_text="Sol (Mission Day)",
+                        showgrid=True,
+                        gridwidth=1,
+                        gridcolor='rgba(128,128,128,0.2)',
+                        row=i, col=j
+                    )
+                    fig.update_yaxes(
+                        showgrid=True,
+                        gridwidth=1,
+                        gridcolor='rgba(128,128,128,0.2)',
+                        row=i, col=j
+                    )
+            
+            return fig
+            
+        except Exception as e:
+            logger.error(f"Error creating GAM crew analysis: {e}")
+            return self._create_error_figure(f"Error creating GAM analysis: {e}")
+    
+    def _get_subject_color_palette(self, subjects: List[str]) -> Dict[str, str]:
+        """Get a professional color palette for subjects."""
+        # Professional color palette suitable for scientific publications
+        professional_colors = [
+            '#FF6B8A',  # Pink/Red - T01_Mara
+            '#FF8C42',  # Orange - T02_Laura  
+            '#8FBC8F',  # Sage Green - T03_Nancy
+            '#20B2AA',  # Light Sea Green - T04_Michelle
+            '#4682B4',  # Steel Blue - T05_Felicitas
+            '#9370DB',  # Medium Purple - T06_Mara_Selena
+            '#32CD32',  # Lime Green - T07_Geraldinn
+            '#FF69B4'   # Hot Pink - T08_Karina
+        ]
+        
+        subject_colors = {}
+        for i, subject in enumerate(subjects):
+            subject_colors[subject] = professional_colors[i % len(professional_colors)]
+        
+        return subject_colors
+    
+    def _format_metric_title_professional(self, metric: str) -> str:
+        """Format metric names for professional presentation."""
+        # Extract domain and metric name
+        if '_' in metric:
+            domain, metric_name = metric.split('_', 1)
+        else:
+            domain, metric_name = '', metric
+        
+        title_mapping = {
+            'rmssd': 'RMSSD Value',
+            'sdnn': 'SDNN Value', 
+            'pnn50': 'pNN50 Value',
+            'mean_hr': 'Mean HR (bpm)',
+            'lf_power': 'LF Power',
+            'hf_power': 'HF Power',
+            'lf_hf_ratio': 'LF/HF Ratio',
+            'lf_nu': 'LF (n.u.)',
+            'hf_nu': 'HF (n.u.)'
+        }
+        
+        return title_mapping.get(metric_name, metric_name.replace('_', ' ').title())
+    
+    def _calculate_crew_median_by_sol(self, time_series_data: Dict, metric: str) -> Dict[str, List]:
+        """Calculate crew median values at each SOL."""
+        sol_values = {}
+        
+        # Collect all values by SOL
+        for subject in time_series_data:
+            if metric in time_series_data[subject]:
+                subject_data = time_series_data[subject][metric]
+                for sol, value in zip(subject_data['sols'], subject_data['values']):
+                    if sol not in sol_values:
+                        sol_values[sol] = []
+                    sol_values[sol].append(value)
+        
+        # Calculate median for each SOL
+        sols = sorted(sol_values.keys())
+        medians = [np.median(sol_values[sol]) for sol in sols]
+        
+        return {'sols': sols, 'medians': medians}
+    
+    def _fit_gam_model(self, x_data: np.ndarray, y_data: np.ndarray, confidence_level: float = 0.95) -> Optional[Dict[str, np.ndarray]]:
+        """Fit GAM model and return smoothed trend with confidence intervals."""
+        if not GAM_AVAILABLE:
+            logger.warning("GAM not available, using polynomial trend instead")
+            return self._fit_polynomial_trend(x_data, y_data, confidence_level)
+        
+        try:
+            # Prepare data
+            df = pd.DataFrame({'x': x_data, 'y': y_data})
+            df = df.sort_values('x')
+            
+            # Create smoothing spline for GAM
+            x_spline = BSplines(df[['x']], df=[6], degree=[3])
+            
+            # Fit GAM model
+            gam_model = GLMGam(df['y'], smoother=x_spline, family=Gaussian())
+            gam_results = gam_model.fit()
+            
+            # Create smooth x values for prediction
+            x_range = np.linspace(df['x'].min(), df['x'].max(), 50)
+            x_smooth_df = pd.DataFrame({'x': x_range})
+            x_smooth_spline = BSplines(x_smooth_df[['x']], df=[6], degree=[3])
+            
+            # Predict with confidence intervals
+            predictions = gam_results.get_prediction(x_smooth_spline)
+            y_smooth = predictions.predicted_mean
+            conf_int = predictions.conf_int(alpha=1-confidence_level)
+            
+            return {
+                'x_smooth': x_range,
+                'y_smooth': y_smooth,
+                'lower_ci': conf_int[:, 0],
+                'upper_ci': conf_int[:, 1]
+            }
+            
+        except Exception as e:
+            logger.warning(f"GAM fitting failed: {e}, using polynomial fallback")
+            return self._fit_polynomial_trend(x_data, y_data, confidence_level)
+    
+    def _fit_polynomial_trend(self, x_data: np.ndarray, y_data: np.ndarray, confidence_level: float = 0.95) -> Dict[str, np.ndarray]:
+        """Fallback polynomial trend fitting with confidence intervals."""
+        try:
+            # Sort data
+            sorted_indices = np.argsort(x_data)
+            x_sorted = x_data[sorted_indices]
+            y_sorted = y_data[sorted_indices]
+            
+            # Fit polynomial (degree 2 for smooth curve)
+            degree = min(2, len(x_data) - 1)
+            poly_coeffs = np.polyfit(x_sorted, y_sorted, degree)
+            
+            # Create smooth x values
+            x_smooth = np.linspace(x_sorted.min(), x_sorted.max(), 50)
+            y_smooth = np.polyval(poly_coeffs, x_smooth)
+            
+            # Calculate confidence intervals using bootstrap
+            n_bootstrap = 100
+            predictions = []
+            
+            for _ in range(n_bootstrap):
+                # Bootstrap sample
+                indices = np.random.choice(len(x_sorted), len(x_sorted), replace=True)
+                x_boot = x_sorted[indices]
+                y_boot = y_sorted[indices]
+                
+                # Fit polynomial
+                boot_coeffs = np.polyfit(x_boot, y_boot, degree)
+                boot_pred = np.polyval(boot_coeffs, x_smooth)
+                predictions.append(boot_pred)
+            
+            predictions = np.array(predictions)
+            alpha = 1 - confidence_level
+            lower_ci = np.percentile(predictions, 100 * alpha/2, axis=0)
+            upper_ci = np.percentile(predictions, 100 * (1-alpha/2), axis=0)
+            
+            return {
+                'x_smooth': x_smooth,
+                'y_smooth': y_smooth,
+                'lower_ci': lower_ci,
+                'upper_ci': upper_ci
+            }
+            
+        except Exception as e:
+            logger.error(f"Polynomial trend fitting failed: {e}")
+            return None
+
     def _extract_time_series_data(self, analysis_results: Dict[str, Any], subjects_filter: List[str] = None) -> Dict[str, Dict[str, Dict[str, list]]]:
         """Extract and organize time series data from analysis results."""
         time_series_data = {}
@@ -661,7 +1054,7 @@ class InteractivePlotter:
             
     def create_correlation_heatmap(self,
                                  hrv_metrics: pd.DataFrame,
-                                 title: str = "HRV Metrics Correlation Matrix",
+                                 title: str = "",
                                  show_significance: bool = True,
                                  cluster_metrics: bool = True) -> go.Figure:
         """
@@ -791,11 +1184,6 @@ class InteractivePlotter:
                             
             # Update layout
             fig.update_layout(
-                title=dict(
-                    text=title,
-                    x=0.5,
-                    font=dict(size=self.font_size + 4)
-                ),
                 template=self.template,
                 width=max(self.default_width, len(corr_matrix.columns) * 40 + 200),
                 height=max(self.default_height, len(corr_matrix.index) * 40 + 200),
@@ -815,7 +1203,7 @@ class InteractivePlotter:
     def create_time_series_plot(self,
                               rr_intervals: np.ndarray,
                               timestamps: np.ndarray = None,
-                              title: str = "RR Interval Time Series",
+                              title: str = "",
                               show_trend: bool = True,
                               show_variability_bands: bool = True) -> go.Figure:
         """
@@ -910,9 +1298,12 @@ class InteractivePlotter:
             layout_config = self._get_responsive_layout()
             layout_config.update({
                 'title': dict(
-                    text=title,
-                    x=0.5,
-                    font=dict(size=self.font_size + 4)
+                    text="RR Interval Time Series",
+                    x=0.02,
+                    y=0.98,
+                    xanchor='left',
+                    yanchor='top',
+                    font=dict(size=12, color="#666666")
                 ),
                 'xaxis_title': x_title,
                 'yaxis_title': "RR Interval [ms]",
@@ -948,14 +1339,6 @@ class InteractivePlotter:
             # Create subplots
             fig = make_subplots(
                 rows=3, cols=2,
-                subplot_titles=[
-                    "RR Interval Time Series",
-                    "Poincaré Plot", 
-                    "Power Spectral Density",
-                    "HRV Metrics Summary",
-                    "Frequency Band Distribution",
-                    "Time vs. Frequency Domain"
-                ],
                 specs=[
                     [{"secondary_y": False}, {"secondary_y": False}],
                     [{"secondary_y": False}, {"type": "table"}],
@@ -1213,132 +1596,26 @@ class InteractivePlotter:
             output_path = Path(filename)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Create responsive HTML with custom CSS
-            if self.responsive:
-                config = {
-                    'displayModeBar': True,
-                    'displaylogo': False,
-                    'modeBarButtonsToAdd': ['pan2d', 'select2d', 'lasso2d', 'resetScale2d'],
-                    'responsive': True,
-                    'toImageButtonOptions': {
-                        'format': 'png',
-                        'filename': 'hrv_analysis',
-                        'height': 1080,
-                        'width': 1920,
-                        'scale': 2
-                    }
-                }
-                
-                html_template = """
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>HRV Analysis - Full Screen</title>
-    <style>
-        body {{
-            margin: 0;
-            padding: 0;
-            background-color: #f8f9fa;
-            font-family: Arial, sans-serif;
-            overflow: hidden;
-        }}
-        .plot-container {{
-            width: 100vw;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }}
-        .plot-div {{
-            flex: 1;
-            min-height: 0;
-        }}
-        .header {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 10px 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
-        .header h1 {{
-            margin: 0;
-            font-size: 18px;
-            font-weight: 600;
-        }}
-        @media (max-width: 768px) {{
-            .header h1 {{
-                font-size: 16px;
-            }}
-        }}
-    </style>
-    {plotlyjs}
-</head>
-<body>
-    <div class="plot-container">
-        <div class="header">
-            <h1>Enhanced HRV Analysis - Full Screen View</h1>
-        </div>
-        <div id="plotly-div" class="plot-div"></div>
-    </div>
-    <script>
-        var plotConfig = {config};
-        var plotData = {plot_json};
-        
-        // Ensure full responsiveness
-        plotData.layout.autosize = true;
-        plotData.layout.width = undefined;
-        plotData.layout.height = undefined;
-        plotData.layout.margin = plotData.layout.margin || {{}};
-        plotData.layout.margin.t = plotData.layout.margin.t || 60;
-        
-        Plotly.newPlot('plotly-div', plotData.data, plotData.layout, plotConfig);
-        
-        // Handle window resize
-        window.addEventListener('resize', function() {{
-            Plotly.Plots.resize('plotly-div');
-        }});
-        
-        // Handle fullscreen changes
-        document.addEventListener('fullscreenchange', function() {{
-            setTimeout(function() {{
-                Plotly.Plots.resize('plotly-div');
-            }}, 100);
-        }});
-    </script>
-</body>
-</html>"""
-                
-                # Generate plot JSON
-                plot_json = fig.to_json()
-                
-                # Get plotly.js script
-                if include_plotlyjs == "cdn":
-                    plotlyjs = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
-                elif include_plotlyjs == "inline":
-                    plotlyjs = f'<script>{pyo.offline.get_plotlyjs()}</script>'
-                else:
-                    plotlyjs = '<script src="plotly.min.js"></script>'
-                
-                # Write custom HTML
-                html_content = html_template.format(
-                    plotlyjs=plotlyjs,
-                    config=config,
-                    plot_json=plot_json
-                )
-                
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write(html_content)
-                    
-            else:
-                # Standard export for non-responsive mode
-                pyo.plot(fig, 
-                        filename=str(output_path),
-                        auto_open=False,
-                        include_plotlyjs=include_plotlyjs)
+            # Standard export for non-responsive mode
+            pyo.plot(fig, 
+                    filename=str(output_path),
+                    auto_open=False,
+                    include_plotlyjs=include_plotlyjs)
             
-            logger.info(f"Exported {'responsive full-screen' if self.responsive else 'standard'} plot to {output_path}")
+            logger.info(f"Exported standard plot to {output_path}")
             return True
             
         except Exception as e:
             logger.error(f"Error exporting HTML: {e}")
-            return False 
+            return False
+    
+    def get_available_metrics(self, analysis_results: Dict[str, Any]) -> List[str]:
+        """Get a list of available HRV metrics from the analysis results."""
+        metrics = set()
+        for key, result in analysis_results.items():
+            if 'hrv_results' in result:
+                for domain, domain_metrics in result['hrv_results'].items():
+                    if isinstance(domain_metrics, dict):
+                        for metric_name in domain_metrics.keys():
+                            metrics.add(f"{domain}_{metric_name}")
+        return sorted(list(metrics)) 
