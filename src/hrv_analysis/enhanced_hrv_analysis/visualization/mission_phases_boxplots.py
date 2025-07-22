@@ -75,84 +75,18 @@ class MissionPhasesBoxplotGenerator:
         """
         logger.info("Preparing mission data for phase analysis")
         
-        # Extract data from analysis results
-        all_data = []
-        
-        for subject_key, result in analysis_results.items():
-            # Skip summary entries
-            if not isinstance(result, dict) or 'data_info' not in result:
-                continue
-                
-            # Extract subject info
-            subject_name = subject_key
-            if '_Sol' in subject_key:
-                # Extract Sol number if present
-                sol_part = subject_key.split('_Sol')[1].split('_')[0]
-                try:
-                    sol_number = float(sol_part)
-                except:
-                    sol_number = 1  # Default Sol
-            else:
-                sol_number = 1  # Default Sol
-            
-            # Get HRV metrics
-            hrv_results = result.get('hrv_results', {})
-            
-            # Create data entry
-            data_entry = {
-                'Subject': subject_name.split('_Sol')[0] if '_Sol' in subject_name else subject_name,
-                'Sol': sol_number,
-                'Subject_Session': subject_key
-            }
-            
-            # Extract key HRV metrics
-            if 'time_domain' in hrv_results:
-                td = hrv_results['time_domain']
-                data_entry.update({
-                    'SDNN': getattr(td, 'sdnn', np.nan),
-                    'RMSSD': getattr(td, 'rmssd', np.nan),
-                    'Mean_HR': getattr(td, 'mean_hr', np.nan),
-                    'pNN50': getattr(td, 'pnn50', np.nan)
-                })
-            
-            if 'frequency_domain' in hrv_results:
-                fd = hrv_results['frequency_domain'] 
-                data_entry.update({
-                    'HF_Power': getattr(fd, 'hf_power', np.nan),
-                    'LF_Power': getattr(fd, 'lf_power', np.nan),
-                    'LF_HF_Ratio': getattr(fd, 'lf_hf_ratio', np.nan),
-                    'VLF_Power': getattr(fd, 'vlf_power', np.nan)
-                })
-            
-            if 'nonlinear' in hrv_results:
-                nl = hrv_results['nonlinear']
-                if isinstance(nl, dict):
-                    data_entry.update({
-                        'SD1': nl.get('sd1', np.nan),
-                        'SD2': nl.get('sd2', np.nan), 
-                        'DFA_alpha1': nl.get('dfa_alpha1', np.nan),
-                        'DFA_alpha2': nl.get('dfa_alpha2', np.nan)
-                    })
-            
-            # Add simulated physiological data (in real app this would come from actual data)
-            # This creates realistic-looking data for demonstration
-            np.random.seed(hash(subject_key) % 1000)  # Consistent seed per subject
-            base_hr = 70 + np.random.normal(0, 10)
-            data_entry.update({
-                'heart_rate_mean': max(50, base_hr + sol_number * np.random.normal(0, 2)),
-                'breathing_rate_mean': max(12, 16 + np.random.normal(0, 2)),
-                'activity_mean': max(0, 1.2 + np.random.normal(0, 0.3)),
-                'spo2_mean': min(100, max(95, 98 + np.random.normal(0, 1)))
+        # Use comprehensive metric extraction
+        try:
+            df = self._extract_hrv_metrics_from_results(analysis_results)
+            logger.info(f"Successfully extracted data for {len(df)} subject-session combinations")
+        except ValueError as e:
+            logger.error(f"Failed to extract HRV metrics: {e}")
+            # Create a minimal DataFrame as fallback
+            df = pd.DataFrame({
+                'Subject': ['Unknown'],
+                'Session': ['Unknown'],
+                'Sol': [1.0]
             })
-            
-            all_data.append(data_entry)
-        
-        if not all_data:
-            raise ValueError("No valid analysis results found for mission phase analysis")
-            
-        # Create DataFrame
-        df = pd.DataFrame(all_data)
-        logger.info(f"Prepared data for {len(df)} subject-session combinations")
         
         # Define mission phases based on Sol distribution
         if 'Sol' in df.columns and df['Sol'].notna().sum() > 0:
@@ -621,11 +555,16 @@ class MissionPhasesBoxplotGenerator:
         # Create output directory
         Path(output_dir).mkdir(exist_ok=True)
         
-        # Select key HRV metrics for plotting
-        hrv_metrics = ['SDNN', 'RMSSD', 'pNN50', 'Mean_HR', 'LF_HF_Ratio', 'HF_Power', 'LF_Power']
-        available_metrics = [m for m in hrv_metrics if m in df.columns and df[m].notna().sum() > 0]
+        # Get all available HRV metrics from the data
+        excluded_cols = ['Subject', 'Session', 'Sol', 'Mission_Phase']
+        all_metrics = [col for col in df.columns if col not in excluded_cols]
+        available_metrics = [m for m in all_metrics if df[m].notna().sum() > 0]
         
         if not available_metrics:
+            logger.error(f"Available columns: {list(df.columns)}")
+            logger.error(f"Data shape: {df.shape}")
+            logger.error("Sample data:")
+            logger.error(df.head().to_string())
             raise ValueError("No suitable HRV metrics found for individual boxplots")
         
         plot_paths = []
@@ -1020,3 +959,161 @@ class MissionPhasesBoxplotGenerator:
         
         logger.info(f"Plotly boxplot report generated: {report_path}")
         return str(report_path) 
+
+    def _extract_hrv_metrics_from_results(self, analysis_results: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Extract HRV metrics from analysis results and create a DataFrame.
+        
+        The HRV processor stores results in domain-specific nested dictionaries:
+        {
+          'T01_Mara': {
+            'hrv_results': {
+              'time_domain': {'sdnn': 45.2, 'rmssd': 28.1, 'pnn50': 15.3, 'mean_hr': 72.4, ...},
+              'frequency_domain': {'lf_power': 1245.6, 'hf_power': 567.8, 'lf_hf_ratio': 2.19, ...},
+              'parasympathetic': {...},
+              'sympathetic': {...},
+              ...
+            },
+            'sol_number': 3.5,
+            'processing_info': {...}
+          }
+        }
+        
+        This method flattens the nested structure for boxplot analysis.
+        """
+        logger.info("Extracting HRV metrics from nested analysis results structure")
+        
+        extracted_data = []
+        
+        for subject_session, results in analysis_results.items():
+            if not isinstance(results, dict) or 'hrv_results' not in results:
+                logger.warning(f"No HRV results found for {subject_session}")
+                continue
+            
+            hrv_results = results['hrv_results']
+            if not isinstance(hrv_results, dict):
+                logger.warning(f"Invalid HRV results format for {subject_session}")
+                continue
+            
+            # Extract subject name and sol number
+            subject = subject_session.split('_')[0] if '_' in subject_session else subject_session
+            sol_number = results.get('sol_number', 0)
+            
+            # Flatten metrics from all domains
+            flattened_metrics = {}
+            
+            # Extract time domain metrics
+            if 'time_domain' in hrv_results:
+                td = hrv_results['time_domain']
+                if isinstance(td, dict):
+                    flattened_metrics.update({
+                        'SDNN': td.get('sdnn', np.nan),
+                        'RMSSD': td.get('rmssd', np.nan),
+                        'pNN50': td.get('pnn50', np.nan),
+                        'Mean_HR': td.get('mean_hr', np.nan),
+                        'NN50': td.get('nn50', np.nan),
+                        'pNN20': td.get('pnn20', np.nan),
+                        'CVNN': td.get('cvnn', np.nan),
+                        'SDSD': td.get('sdsd', np.nan),
+                        'Mean_NNI': td.get('mean_nni', np.nan),
+                        'Median_NNI': td.get('median_nni', np.nan)
+                    })
+            
+            # Extract frequency domain metrics
+            if 'frequency_domain' in hrv_results:
+                fd = hrv_results['frequency_domain']
+                if isinstance(fd, dict):
+                    flattened_metrics.update({
+                        'LF_Power': fd.get('lf_power', np.nan),
+                        'HF_Power': fd.get('hf_power', np.nan),
+                        'VLF_Power': fd.get('vlf_power', np.nan),
+                        'Total_Power': fd.get('total_power', np.nan),
+                        'LF_HF_Ratio': fd.get('lf_hf_ratio', np.nan),
+                        'LF_NU': fd.get('lf_nu', np.nan),
+                        'HF_NU': fd.get('hf_nu', np.nan),
+                        'LF_Peak': fd.get('lf_peak', np.nan),
+                        'HF_Peak': fd.get('hf_peak', np.nan),
+                        'VLF_Peak': fd.get('vlf_peak', np.nan)
+                    })
+            
+            # Extract nonlinear metrics if available
+            if 'nonlinear' in hrv_results:
+                nl = hrv_results['nonlinear']
+                if isinstance(nl, dict):
+                    flattened_metrics.update({
+                        'SD1': nl.get('sd1', np.nan),
+                        'SD2': nl.get('sd2', np.nan),
+                        'SD1_SD2_Ratio': nl.get('sd1_sd2_ratio', np.nan),
+                        'DFA_Alpha1': nl.get('dfa_alpha1', np.nan),
+                        'DFA_Alpha2': nl.get('dfa_alpha2', np.nan),
+                        'Sample_Entropy': nl.get('sample_entropy', np.nan),
+                        'ApEn': nl.get('approximate_entropy', np.nan),
+                        'TINN': nl.get('tinn', np.nan)
+                    })
+            
+            # Extract parasympathetic metrics
+            if 'parasympathetic' in hrv_results:
+                ps = hrv_results['parasympathetic']
+                if isinstance(ps, dict):
+                    flattened_metrics.update({
+                        'Parasympathetic_Index': ps.get('parasympathetic_index', np.nan),
+                        'RSA_Amplitude': ps.get('rsa_amplitude', np.nan),
+                        'Respiratory_Frequency': ps.get('respiratory_frequency', np.nan),
+                        'Vagal_Tone_Index': ps.get('vagal_tone_index', np.nan),
+                        'HF_RMSSD_Ratio': ps.get('hf_rmssd_ratio', np.nan)
+                    })
+            
+            # Extract sympathetic metrics
+            if 'sympathetic' in hrv_results:
+                sy = hrv_results['sympathetic']
+                if isinstance(sy, dict):
+                    flattened_metrics.update({
+                        'Sympathetic_Index': sy.get('sympathetic_index', np.nan),
+                        'Stress_Index': sy.get('stress_index', np.nan),
+                        'Autonomic_Balance': sy.get('autonomic_balance', np.nan),
+                        'Cardiac_Sympathetic_Index': sy.get('cardiac_sympathetic_index', np.nan),
+                        'Beta_Adrenergic_Sensitivity': sy.get('beta_adrenergic_sensitivity', np.nan)
+                    })
+            
+            # Extract ANS balance metrics
+            if 'ans_balance' in hrv_results:
+                ab = hrv_results['ans_balance']
+                if isinstance(ab, dict):
+                    flattened_metrics.update({
+                        'ANS_Complexity': ab.get('ans_complexity', np.nan),
+                        'Sympathovagal_Index': ab.get('sympathovagal_index', np.nan),
+                        'Cardiac_Autonomic_Balance': ab.get('cardiac_autonomic_balance', np.nan),
+                        'Autonomic_Reactivity': ab.get('autonomic_reactivity', np.nan),
+                        'Baroreflex_Sensitivity': ab.get('baroreflex_sensitivity', np.nan)
+                    })
+            
+            # Add metadata
+            row_data = {
+                'Subject': subject,
+                'Session': subject_session,
+                'Sol': sol_number,
+                **flattened_metrics
+            }
+            
+            extracted_data.append(row_data)
+        
+        if not extracted_data:
+            raise ValueError("No valid HRV data found in analysis results")
+        
+        df = pd.DataFrame(extracted_data)
+        
+        # Log available metrics
+        metric_cols = [col for col in df.columns if col not in ['Subject', 'Session', 'Sol']]
+        available_metrics = []
+        for col in metric_cols:
+            valid_count = df[col].notna().sum()
+            if valid_count > 0:
+                available_metrics.append(f"{col} ({valid_count} valid)")
+        
+        logger.info(f"Extracted {len(df)} records with {len(available_metrics)} metrics:")
+        for metric_info in available_metrics[:10]:  # Show first 10
+            logger.info(f"  • {metric_info}")
+        if len(available_metrics) > 10:
+            logger.info(f"  • ... and {len(available_metrics) - 10} more")
+        
+        return df 
