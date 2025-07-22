@@ -565,13 +565,18 @@ class HRVAnalysisApp:
                   command=self._generate_all_plots,
                   style='Accent.TButton').grid(row=1, column=0, padx=5, pady=5, sticky="ew")
         
-        ttk.Button(buttons_frame, text="Combined Time Series", 
-                  command=self._generate_combined_time_series,
-                  style='Accent.TButton').grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        ttk.Button(buttons_frame, text="🎯 Elegant Metric Explorer", 
+                  command=self._generate_elegant_time_series,
+                  style='Primary.TButton').grid(row=1, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
         
-        ttk.Button(buttons_frame, text="Custom Time Series", 
+        # Legacy options (moved to row 2)
+        ttk.Button(buttons_frame, text="Combined Time Series (Legacy)", 
+                  command=self._generate_combined_time_series,
+                  style='Secondary.TButton').grid(row=2, column=0, padx=5, pady=5, sticky="ew")
+        
+        ttk.Button(buttons_frame, text="Custom Time Series (Legacy)", 
                   command=self._generate_custom_time_series,
-                  style='Accent.TButton').grid(row=1, column=2, padx=5, pady=5, sticky="ew")
+                  style='Secondary.TButton').grid(row=2, column=1, padx=5, pady=5, sticky="ew")
         
         # Row 3 - GAM Analysis (New)
         ttk.Button(buttons_frame, text="GAM Crew Analysis", 
@@ -620,6 +625,13 @@ class HRVAnalysisApp:
                                      font=('Helvetica', 9),
                                      foreground='#1B4F72')
         plotly_desc_label.pack(pady=(2, 0))
+        
+        # Elegant metric explorer description
+        elegant_desc_label = ttk.Label(main_frame,
+                                      text="🎯 Elegant Metric Explorer: Research-backed single-metric focus with dropdown selection (RECOMMENDED)",
+                                      font=('Helvetica', 9, 'bold'),
+                                      foreground='#D4AF37')
+        elegant_desc_label.pack(pady=(2, 0))
         
         # Status display
         self.plot_status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
@@ -2784,6 +2796,52 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         except Exception as e:
             logger.error(f"Error in GAM custom analysis generation: {e}")
             messagebox.showerror("Error", f"Error generating GAM custom analysis: {e}")
+
+    def _generate_elegant_time_series(self):
+        """Generate the new elegant metric-focused time series visualization."""
+        try:
+            if not self.analysis_results:
+                messagebox.showwarning("Warning", "No analysis results available")
+                return
+
+            self.plot_status_label.configure(text="Creating elegant metric-focused time series visualization...")
+            self.root.update_idletasks()
+            
+            # Generate elegant time series with metric selector
+            elegant_fig = self.interactive_plotter.create_elegant_metric_selector(
+                analysis_results=self.analysis_results
+            )
+            
+            plot_path = Path("plots_output") / "hrv_elegant_time_series_explorer.html"
+            self.interactive_plotter.export_html(elegant_fig, str(plot_path))
+            
+            success_text = f"✅ Elegant Time Series Explorer Generated!\n"
+            success_text += f"🎯 Research-backed single-metric visualization\n"
+            success_text += f"📊 Clean, readable plots with dropdown selection\n"
+            success_text += f"Analysis saved as: {plot_path.absolute()}"
+            self.plot_status_label.configure(text=success_text)
+            
+            # Show completion message
+            completion_message = (
+                "🎉 Elegant Time Series Explorer Created!\n\n"
+                "✨ Features:\n"
+                "• Clean, focused visualization (one metric at a time)\n"
+                "• Dropdown selection organized by HRV domains\n"
+                "• Interactive hover information\n"
+                "• Professional styling for clear interpretation\n"
+                "• Based on visualization research best practices\n\n"
+                "💡 This approach solves the 'spaghetti plot' problem by\n"
+                "focusing on one metric at a time for better readability.\n\n"
+                "The plot will open automatically in your browser."
+            )
+            
+            messagebox.showinfo("Elegant Explorer Ready", completion_message)
+            self._open_plot_file(plot_path)
+            
+        except Exception as e:
+            logger.error(f"Error generating elegant time series: {e}")
+            self.plot_status_label.configure(text=f"❌ Error: {e}")
+            messagebox.showerror("Error", f"Failed to generate elegant time series: {e}")
 
     def _open_plot_file(self, file_path):
         """Open plot file in default browser."""

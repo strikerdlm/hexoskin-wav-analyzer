@@ -2007,3 +2007,322 @@ class InteractivePlotter:
             'ans_balance_autonomic_reactivity': 'ANS Reactivity - Autonomic responsiveness',
             'ans_balance_baroreflex_sensitivity': 'Baroreflex Sens - Baroreflex sensitivity estimate'
         } 
+
+    def create_elegant_metric_selector(self, analysis_results: Dict[str, Any]) -> go.Figure:
+        """
+        Create an elegant time series visualization with metric selection dropdown.
+        
+        This approach implements research-backed best practices:
+        - Avoids "spaghetti plots" with overlapping lines
+        - Uses progressive disclosure with metric-focused selection
+        - Shows one metric clearly across all subjects
+        - Provides clean, readable visualizations
+        
+        Based on research from University of Iowa, Mode.com, and visualization experts
+        who recommend small multiples and interactive selection over crowded plots.
+        """
+        logger.info("Creating elegant metric-focused time series with dropdown selection")
+        
+        # Get comprehensive metrics organized by domain
+        available_metrics_by_domain = self.get_available_metrics_by_domain(analysis_results)
+        
+        if not any(available_metrics_by_domain.values()):
+            raise ValueError("No HRV metrics available for visualization")
+        
+        # Create figure
+        fig = go.Figure()
+        
+        # Prepare data structure for all metrics
+        metrics_data = self._prepare_metrics_for_elegant_display(analysis_results, available_metrics_by_domain)
+        
+        # Add initial metric (first available)
+        initial_domain = next(iter(available_metrics_by_domain.keys()))
+        initial_metric = available_metrics_by_domain[initial_domain][0]
+        
+        # Add traces for initial metric
+        self._add_metric_traces(fig, metrics_data, initial_metric)
+        
+        # Create dropdown buttons organized by domain
+        dropdown_buttons = self._create_elegant_dropdown_buttons(metrics_data, available_metrics_by_domain)
+        
+        # Update layout with elegant styling
+        fig.update_layout(
+            title=dict(
+                text=f'<b>HRV Time Series Analysis - Metric Explorer</b><br>'
+                     f'<span style="font-size:14px">Select any HRV metric to view trends across all subjects</span>',
+                x=0.5,
+                font=dict(size=18, color='#2C3E50')
+            ),
+            xaxis=dict(
+                title='Mission Sol (Days)',
+                title_font=dict(size=14, color='#2C3E50'),
+                tickfont=dict(size=12),
+                showgrid=True,
+                gridcolor='rgba(128,128,128,0.2)',
+                zeroline=False
+            ),
+            yaxis=dict(
+                title=self._get_metric_display_name(initial_metric),
+                title_font=dict(size=14, color='#2C3E50'),
+                tickfont=dict(size=12),
+                showgrid=True,
+                gridcolor='rgba(128,128,128,0.2)',
+                zeroline=False
+            ),
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="center",
+                x=0.5,
+                font=dict(size=11),
+                bgcolor="rgba(255,255,255,0.8)",
+                bordercolor="rgba(128,128,128,0.2)",
+                borderwidth=1
+            ),
+            width=1200,
+            height=700,
+            margin=dict(l=80, r=80, t=120, b=80),
+            font=dict(family="Arial, sans-serif", size=12, color="#2C3E50"),
+            updatemenus=[{
+                'buttons': dropdown_buttons,
+                'direction': 'down',
+                'pad': {'r': 10, 't': 10},
+                'showactive': True,
+                'x': 0.02,
+                'xanchor': 'left',
+                'y': 1.05,
+                'yanchor': 'top',
+                'bgcolor': '#F8F9FA',
+                'bordercolor': '#DEE2E6',
+                'borderwidth': 1,
+                'font': dict(size=12)
+            }],
+            annotations=[
+                dict(
+                    text="<b>Select HRV Metric:</b>",
+                    x=0.02,
+                    y=1.08,
+                    xref="paper",
+                    yref="paper",
+                    showarrow=False,
+                    font=dict(size=13, color='#2C3E50'),
+                    xanchor="left"
+                ),
+                dict(
+                    text="💡 Tip: Click on legend items to show/hide individual subjects",
+                    x=0.98,
+                    y=1.08,
+                    xref="paper",
+                    yref="paper",
+                    showarrow=False,
+                    font=dict(size=11, color='#6C757D'),
+                    xanchor="right"
+                )
+            ]
+        )
+        
+        return fig
+    
+    def _prepare_metrics_for_elegant_display(self, analysis_results: Dict[str, Any], 
+                                           available_metrics_by_domain: Dict[str, List[str]]) -> Dict[str, Dict]:
+        """Prepare comprehensive metrics data for elegant display."""
+        metrics_data = {}
+        
+        for subject_session, results in analysis_results.items():
+            if not isinstance(results, dict) or 'hrv_results' not in results:
+                continue
+                
+            hrv_results = results['hrv_results']
+            sol_number = results.get('sol_number', 0)
+            subject_name = subject_session.split('_')[0] if '_' in subject_session else subject_session
+            
+            # Extract metrics from all domains
+            session_metrics = {}
+            
+            for domain_name, domain_metrics in available_metrics_by_domain.items():
+                domain_key = domain_name.lower().replace(' ', '_')
+                
+                if domain_key in hrv_results and isinstance(hrv_results[domain_key], dict):
+                    domain_data = hrv_results[domain_key]
+                    
+                    for metric in domain_metrics:
+                        metric_key = metric.split('_', 1)[-1] if '_' in metric else metric
+                        metric_value = domain_data.get(metric_key.lower(), np.nan)
+                        
+                        if not np.isnan(metric_value):
+                            full_metric_name = f"{domain_name}_{metric_key}"
+                            session_metrics[full_metric_name] = {
+                                'value': float(metric_value),
+                                'sol': float(sol_number),
+                                'subject': subject_name,
+                                'session': subject_session,
+                                'domain': domain_name,
+                                'unit': self._get_metric_unit(metric_key)
+                            }
+            
+            # Add session metrics to global structure
+            for metric_name, metric_info in session_metrics.items():
+                if metric_name not in metrics_data:
+                    metrics_data[metric_name] = {}
+                
+                if subject_name not in metrics_data[metric_name]:
+                    metrics_data[metric_name][subject_name] = []
+                
+                metrics_data[metric_name][subject_name].append(metric_info)
+        
+        # Sort each subject's data by Sol number
+        for metric_name in metrics_data:
+            for subject_name in metrics_data[metric_name]:
+                metrics_data[metric_name][subject_name].sort(key=lambda x: x['sol'])
+        
+        return metrics_data
+    
+    def _add_metric_traces(self, fig: go.Figure, metrics_data: Dict[str, Dict], metric_name: str):
+        """Add traces for a specific metric to the figure."""
+        if metric_name not in metrics_data:
+            logger.warning(f"Metric {metric_name} not found in data")
+            return
+        
+        # Color palette for subjects
+        colors = px.colors.qualitative.Set1
+        
+        for i, (subject_name, subject_data) in enumerate(metrics_data[metric_name].items()):
+            if not subject_data:
+                continue
+                
+            # Extract data for this subject
+            sols = [d['sol'] for d in subject_data]
+            values = [d['value'] for d in subject_data]
+            
+            # Create trace
+            fig.add_trace(go.Scatter(
+                x=sols,
+                y=values,
+                name=subject_name,
+                mode='lines+markers',
+                line=dict(
+                    width=2.5,
+                    color=colors[i % len(colors)]
+                ),
+                marker=dict(
+                    size=6,
+                    symbol='circle',
+                    line=dict(width=1, color='white')
+                ),
+                hovertemplate=(
+                    f'<b>{subject_name}</b><br>'
+                    f'Sol: %{{x:.1f}}<br>'
+                    f'{self._get_metric_display_name(metric_name)}: %{{y:.2f}}<br>'
+                    '<extra></extra>'
+                ),
+                connectgaps=False
+            ))
+    
+    def _create_elegant_dropdown_buttons(self, metrics_data: Dict[str, Dict], 
+                                       available_metrics_by_domain: Dict[str, List[str]]) -> List[Dict]:
+        """Create organized dropdown buttons by domain."""
+        buttons = []
+        
+        for domain_name, domain_metrics in available_metrics_by_domain.items():
+            # Add domain separator
+            if buttons:  # Add separator if not first domain
+                buttons.append(dict(
+                    label=f"─── {domain_name.upper()} ───",
+                    method="skip",  # Non-functional separator
+                    args=[]
+                ))
+            
+            for metric in domain_metrics:
+                full_metric_name = f"{domain_name}_{metric}"
+                
+                if full_metric_name in metrics_data:
+                    # Create visibility array (hide all, show selected subjects)
+                    n_total_traces = sum(len(subjects) for subjects in metrics_data.values() for metric_key in [full_metric_name] if metric_key in metrics_data)
+                    
+                    # Calculate visibility for this metric
+                    visible_array = []
+                    current_trace_idx = 0
+                    
+                    for other_metric_name in metrics_data.keys():
+                        for subject_name in metrics_data[other_metric_name].keys():
+                            visible_array.append(other_metric_name == full_metric_name)
+                            current_trace_idx += 1
+                    
+                    # Create button
+                    button_dict = dict(
+                        label=self._get_metric_display_name(metric),
+                        method="update",
+                        args=[
+                            {
+                                "visible": visible_array,
+                                "x": [[d['sol'] for d in metrics_data[full_metric_name][subj]] 
+                                     for subj in metrics_data[full_metric_name].keys()] if full_metric_name in metrics_data else [],
+                                "y": [[d['value'] for d in metrics_data[full_metric_name][subj]] 
+                                     for subj in metrics_data[full_metric_name].keys()] if full_metric_name in metrics_data else []
+                            },
+                            {
+                                "yaxis.title": self._get_metric_display_name(metric),
+                                "title.text": f'<b>HRV Time Series Analysis - {self._get_metric_display_name(metric)}</b><br>'
+                                             f'<span style="font-size:14px">Trends across all subjects for {domain_name} domain</span>'
+                            }
+                        ]
+                    )
+                    buttons.append(button_dict)
+        
+        return buttons
+    
+    def _get_metric_display_name(self, metric_name: str) -> str:
+        """Convert metric name to display-friendly format."""
+        # Remove domain prefix if present
+        if '_' in metric_name and len(metric_name.split('_')) > 1:
+            clean_name = '_'.join(metric_name.split('_')[1:])
+        else:
+            clean_name = metric_name
+        
+        # Mapping for common metrics
+        display_mapping = {
+            'sdnn': 'SDNN (Standard Deviation of RR Intervals)',
+            'rmssd': 'RMSSD (Root Mean Square of Successive Differences)',
+            'pnn50': 'pNN50 (% of RR intervals differing >50ms)',
+            'mean_hr': 'Mean Heart Rate (BPM)',
+            'lf_power': 'LF Power (Low Frequency Spectral Power)',
+            'hf_power': 'HF Power (High Frequency Spectral Power)', 
+            'lf_hf_ratio': 'LF/HF Ratio (Sympathovagal Balance)',
+            'total_power': 'Total Spectral Power',
+            'vlf_power': 'VLF Power (Very Low Frequency)',
+            'sd1': 'SD1 (Poincaré Plot Width)',
+            'sd2': 'SD2 (Poincaré Plot Length)',
+            'sample_entropy': 'Sample Entropy',
+            'dfa_alpha1': 'DFA α1 (Short-term Scaling)',
+            'dfa_alpha2': 'DFA α2 (Long-term Scaling)',
+            'parasympathetic_index': 'Parasympathetic Activity Index',
+            'sympathetic_index': 'Sympathetic Activity Index',
+            'stress_index': 'Stress Index',
+            'ans_complexity': 'ANS Complexity Index'
+        }
+        
+        return display_mapping.get(clean_name.lower(), clean_name.replace('_', ' ').title())
+    
+    def _get_metric_unit(self, metric_name: str) -> str:
+        """Get the unit for a metric."""
+        units_mapping = {
+            'sdnn': 'ms',
+            'rmssd': 'ms',
+            'pnn50': '%',
+            'mean_hr': 'BPM',
+            'lf_power': 'ms²',
+            'hf_power': 'ms²',
+            'vlf_power': 'ms²',
+            'total_power': 'ms²',
+            'lf_hf_ratio': 'ratio',
+            'sd1': 'ms',
+            'sd2': 'ms',
+            'sample_entropy': 'au',
+            'dfa_alpha1': 'au',
+            'dfa_alpha2': 'au'
+        }
+        return units_mapping.get(metric_name.lower(), 'au')  # au = arbitrary units
