@@ -18,6 +18,20 @@ import plotly.graph_objects as go
 from pathlib import Path
 from typing import Dict, List, Tuple, Any
 from scipy import stats
+
+# Import unified export configuration
+try:
+    from config import get_export_directory, get_plots_output_path
+except ImportError:
+    # Fallback if config module not found
+    def get_export_directory():
+        return Path("plots_output")
+    
+    def get_plots_output_path(filename=None):
+        export_dir = Path("plots_output")
+        export_dir.mkdir(parents=True, exist_ok=True)
+        return export_dir / filename if filename else export_dir
+
 import logging
 
 # Import HRV reference ranges
@@ -224,22 +238,23 @@ class MissionPhasesBoxplotGenerator:
         return df, mission_phases
     
     def generate_individual_boxplots(self, df: pd.DataFrame, mission_phases: Dict[str, Tuple[float, float]], 
-                                    output_dir: str = "plots_output") -> str:
+                                     output_dir: str = None) -> str:
         """
         Generate individual boxplots for each crew member across mission phases.
         
         Args:
             df: Prepared mission data
             mission_phases: Mission phases definition
-            output_dir: Output directory for plots
-            
-        Returns:
-            Path to saved plot file
-        """
-        logger.info("Generating individual mission phases boxplots")
+            output_dir: Output directory for plots (if None, uses unified export directory)
         
-        # Create output directory
-        Path(output_dir).mkdir(exist_ok=True)
+        Returns:
+            str: Path to generated plot file
+        """
+        if output_dir is None:
+            output_dir = str(get_export_directory())
+        
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
         
         # Select key HRV metrics for plotting
         hrv_metrics = ['SDNN', 'RMSSD', 'Mean_HR', 'LF_HF_Ratio']

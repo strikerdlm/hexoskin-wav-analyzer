@@ -30,6 +30,19 @@ import gc
 import psutil
 import time
 
+# Import unified export configuration
+try:
+    from config import get_export_directory, get_plots_output_path
+except ImportError:
+    # Fallback if config module not found
+    def get_export_directory():
+        return Path("plots_output")
+    
+    def get_plots_output_path(filename=None):
+        export_dir = Path("plots_output")
+        export_dir.mkdir(parents=True, exist_ok=True)
+        return export_dir / filename if filename else export_dir
+
 # Import enhanced HRV analysis components
 # Add parent directory to path for imports
 import sys
@@ -2332,8 +2345,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             )
             
             safe_subject = selected_subject.replace('/', '_').replace('\\', '_')
-            plots_dir = Path("plots_output")
-            plot_path = plots_dir / f"poincare_plot_{safe_subject}.html"
+            plot_path = get_plots_output_path(f"poincare_plot_{safe_subject}.html")
             export_success = self.interactive_plotter.export_html(fig, str(plot_path))
             
             if export_success:
@@ -2372,8 +2384,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             )
             
             safe_subject = selected_subject.replace('/', '_').replace('\\', '_')
-            plots_dir = Path("plots_output")
-            plot_path = plots_dir / f"psd_plot_{safe_subject}.html"
+            plot_path = get_plots_output_path(f"psd_plot_{safe_subject}.html")
             export_success = self.interactive_plotter.export_html(fig, str(plot_path))
             
             if export_success:
@@ -2412,8 +2423,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             )
             
             safe_subject = selected_subject.replace('/', '_').replace('\\', '_')
-            plots_dir = Path("plots_output")
-            plot_path = plots_dir / f"timeseries_plot_{safe_subject}.html"
+            plot_path = get_plots_output_path(f"timeseries_plot_{safe_subject}.html")
             export_success = self.interactive_plotter.export_html(fig, str(plot_path))
             
             if export_success:
@@ -2455,8 +2465,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             )
             
             safe_subject = selected_subject.replace('/', '_').replace('\\', '_')
-            plots_dir = Path("plots_output")
-            dashboard_path = plots_dir / f"hrv_dashboard_{safe_subject}.html"
+            dashboard_path = get_plots_output_path(f"hrv_dashboard_{safe_subject}.html")
             self.interactive_plotter.export_html(dashboard_fig, str(dashboard_path))
             
             success_text = f"✅ HRV Analysis Dashboard generated for {selected_subject} and saved to {dashboard_path.absolute()}"
@@ -2485,7 +2494,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             )
             
             # Save the combined analysis with unique filename
-            plot_path = Path("plots_output") / "hrv_combined_time_series_analysis.html"
+            plot_path = get_plots_output_path("hrv_combined_time_series_analysis.html")
             self.interactive_plotter.export_html(combined_fig, str(plot_path))
             
             # Update status with success message
@@ -2560,7 +2569,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                     metrics_to_plot=selected_metrics
                 )
                 
-                plot_path = Path("plots_output") / "hrv_custom_time_series_analysis.html"
+                plot_path = get_plots_output_path("hrv_custom_time_series_analysis.html")
                 self.interactive_plotter.export_html(custom_fig, str(plot_path))
                 
                 success_text = f"✅ Custom Time Series Analysis Generated!\n"
@@ -2598,7 +2607,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 confidence_level=0.95
             )
 
-            plot_path = Path("plots_output") / "hrv_gam_crew_analysis.html"
+            plot_path = get_plots_output_path("hrv_gam_crew_analysis.html")
             self.interactive_plotter.export_html(gam_fig, str(plot_path))
 
             success_text = f"✅ Comprehensive GAM Crew Analysis Generated!\n"
@@ -2772,7 +2781,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                     confidence_level=0.95
                 )
                 
-                plot_path = Path("plots_output") / "hrv_gam_comprehensive_analysis.html"
+                plot_path = get_plots_output_path("hrv_gam_comprehensive_analysis.html")
                 self.interactive_plotter.export_html(gam_fig, str(plot_path))
                 
                 success_text = f"✅ Comprehensive GAM Analysis Generated!\n"
@@ -2812,7 +2821,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 analysis_results=self.analysis_results
             )
             
-            plot_path = Path("plots_output") / "hrv_metric_explorer.html"
+            plot_path = get_plots_output_path("hrv_metric_explorer.html")
             self.interactive_plotter.export_html(metric_fig, str(plot_path))
             
             success_text = f"✅ Metric Explorer Generated!\n"

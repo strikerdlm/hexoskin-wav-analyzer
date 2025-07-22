@@ -24,18 +24,24 @@ import time
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
 
-# CRITICAL: Set correct working directory to prevent plots being exported
-# to wrong location
-# Project root should be: C:\Users\User\OneDrive\FAC\Research\Valquiria\Data
-project_root = current_dir.parent.parent.parent
-os.chdir(str(project_root))
+# UNIFIED EXPORT CONFIGURATION:
+# Set the unified export directory for all plots and exports
+UNIFIED_EXPORT_DIR = current_dir / "plots_output"
 
-# Create plots output directory at the project root
-plots_output_dir = Path("plots_output")
-plots_output_dir.mkdir(parents=True, exist_ok=True)
+# Create the unified export directory
+UNIFIED_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Set environment variable for other modules to use
+os.environ['HRV_EXPORT_DIR'] = str(UNIFIED_EXPORT_DIR)
+
+# CRITICAL: Set correct working directory to the enhanced_hrv_analysis folder
+# This ensures all relative paths work correctly within the application
+os.chdir(str(current_dir))
 
 print(f"Working directory set to: {os.getcwd()}")
-print(f"Plots will be exported to: {plots_output_dir.absolute()}")
+print(f"Unified export directory: {UNIFIED_EXPORT_DIR.absolute()}")
+print("All plots and exports will be saved to:")
+print(f"  {UNIFIED_EXPORT_DIR.absolute()}")
 
 
 class SplashScreen:
