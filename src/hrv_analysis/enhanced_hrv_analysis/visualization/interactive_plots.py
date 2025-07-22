@@ -2280,7 +2280,16 @@ class InteractivePlotter:
         
         logger.info(f"Created {len(buttons)} dropdown options for metric selection")
         
-        # Update layout with professional styling
+        # Calculate Sol range for X-axis formatting
+        all_sols = []
+        for metric_data in all_metrics_data.values():
+            for subject_data in metric_data.values():
+                all_sols.extend([d['sol'] for d in subject_data])
+        
+        sol_range = (min(all_sols), max(all_sols)) if all_sols else (0, 10)
+        logger.info(f"X-axis Sol range: {sol_range[0]} to {sol_range[1]}")
+        
+        # Update layout with professional styling and improved axes
         fig.update_layout(
             title=dict(
                 text=f'<b>HRV Time Series Analysis - Metric Explorer</b><br>'
@@ -2294,7 +2303,13 @@ class InteractivePlotter:
                 tickfont=dict(size=12),
                 showgrid=True,
                 gridcolor='rgba(128,128,128,0.2)',
-                zeroline=False
+                zeroline=False,
+                # Set explicit range to ensure proper display of Sol values
+                range=[sol_range[0] - 0.5, sol_range[1] + 0.5] if sol_range[1] > sol_range[0] else [0, 10],
+                tickmode='linear',
+                dtick=max(1, (sol_range[1] - sol_range[0]) / 10) if sol_range[1] > sol_range[0] else 1,
+                # Format as integers for Sol days
+                tickformat='.0f'
             ),
             yaxis=dict(
                 title=self._get_metric_display_name(first_metric) if first_metric else "HRV Metric",
@@ -2375,8 +2390,20 @@ class InteractivePlotter:
                 continue
                 
             hrv_results = results['hrv_results']
-            sol_number = results.get('sol_number', 0)
-            subject_name = subject_session.split('_')[0] if '_' in subject_session else subject_session
+            
+            # FIXED: Properly extract Sol number from key name like other methods do
+            if '_Sol' in subject_session:
+                try:
+                    subject_name, sol_str = subject_session.rsplit('_Sol', 1)
+                    sol_number = float(sol_str)
+                except (ValueError, IndexError):
+                    logger.warning(f"Could not parse Sol number from {subject_session}, skipping")
+                    continue
+            else:
+                # Fallback to sol_number from results, but warn if it seems wrong
+                sol_number = results.get('sol_number', 0)
+                subject_name = subject_session.split('_')[0] if '_' in subject_session else subject_session
+                logger.debug(f"No Sol in key name for {subject_session}, using sol_number={sol_number}")
             
             logger.debug(f"Processing {subject_session}: sol={sol_number}, subject={subject_name}")
             logger.debug(f"HRV results domains: {list(hrv_results.keys())}")
@@ -2423,7 +2450,7 @@ class InteractivePlotter:
                             
                             all_metrics[full_metric_name][subject_name].append({
                                 'value': metric_value,
-                                'sol': float(sol_number),
+                                'sol': sol_number,  # Now using the properly extracted Sol number
                                 'subject': subject_name,
                                 'session': subject_session,
                                 'domain': domain_name,
@@ -2434,6 +2461,15 @@ class InteractivePlotter:
         for metric_name in all_metrics:
             for subject_name in all_metrics[metric_name]:
                 all_metrics[metric_name][subject_name].sort(key=lambda x: x['sol'])
+        
+        # Log Sol ranges for debugging
+        if all_metrics:
+            sample_metric = list(all_metrics.keys())[0]
+            all_sols = []
+            for subject_data in all_metrics[sample_metric].values():
+                all_sols.extend([d['sol'] for d in subject_data])
+            if all_sols:
+                logger.info(f"Sol values range from {min(all_sols)} to {max(all_sols)}")
         
         logger.info(f"Prepared metrics data for {len(all_metrics)} metrics across {len(set(subject for metric_data in all_metrics.values() for subject in metric_data.keys()))} subjects")
         
