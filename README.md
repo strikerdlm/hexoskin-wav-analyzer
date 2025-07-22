@@ -50,6 +50,7 @@ This platform was developed to support the Valquiria Space Analog Simulation res
 - **Interactive Dashboards**: Real-time visualization with Plotly-based interactive plots
 - **Enterprise Performance**: Intelligent caching, async processing, and database optimization
 - **Research Analytics**: Comprehensive statistical reporting and data quality assessment
+- **🆕 Mission Phases Boxplots**: Compare physiological adaptation across Early, Mid, and Late mission phases
 
 ## 🏗️ Project Structure
 
@@ -157,6 +158,7 @@ python launch_hrv_analysis.py
 - **Statistical Dashboards**: Real-time analytics with performance monitoring
 - **Export Options**: HTML reports, CSV data, high-resolution plots
 - **Research Reports**: Automated generation of analysis summaries
+- **🆕 Mission Phases Analysis**: Individual and group boxplots comparing crew adaptation across mission timeline
 
 ## 🔬 Scientific Features
 
@@ -171,6 +173,45 @@ python launch_hrv_analysis.py
 - **Stress Assessment**: Autonomic nervous system stress indicators
 - **Crew Monitoring**: Individual and group health status analysis
 - **Mission Planning**: Predictive modeling for mission duration effects
+
+### 🆕 Mission Phases Boxplots Analysis
+**NEW FEATURE: Temporal Mission Analysis**
+
+The Enhanced HRV Analysis System now includes mission phases boxplot analysis for comprehensive crew adaptation assessment:
+
+#### Features:
+- **Three Mission Phases**: Automatically divides mission timeline into Early, Mid, and Late periods based on SOL sessions
+- **Individual Crew Analysis**: Compare each crew member's physiological adaptation patterns across mission phases
+- **Group Population Analysis**: Analyze crew-wide temporal trends and phase differences
+- **Statistical Testing**: Kruskal-Wallis H-test for comparing phases with p-value annotations
+- **Effect Size Calculation**: Eta-squared (η²) for practical significance assessment
+
+#### Analysis Types:
+- **Individual Boxplots**: Side-by-side comparison of each crew member across all three mission phases
+- **Group Boxplots**: Population-level analysis comparing all crew members by phase
+- **Comprehensive Reports**: Combined analysis with statistical summaries and interpretations
+
+#### Integration:
+- **Seamless Workflow**: Integrated into existing Enhanced HRV Analysis GUI
+- **Real HRV Data**: Uses computed SDNN, RMSSD, LF/HF ratios, and other HRV metrics
+- **Publication Ready**: Professional visualizations with statistical annotations
+- **Export Capabilities**: High-resolution plots and detailed text reports
+
+#### Usage:
+```bash
+# Launch Enhanced HRV Analysis
+cd src/hrv_analysis/enhanced_hrv_analysis
+python launch_hrv_analysis.py
+
+# 1. Run HRV Analysis for all subjects
+# 2. Go to "Visualizations" tab
+# 3. Look for green "Mission Phases" buttons:
+#    • Mission Phases - Individual
+#    • Mission Phases - Group  
+#    • Mission Phases - Report
+```
+
+**Output Location**: All plots and reports saved to `plots_output/` folder
 
 ## 💻 Technical Specifications
 
@@ -265,6 +306,7 @@ For questions about the Valquiria Space Analog Simulation or this software platf
 - Interactive visualization dashboard
 - Performance optimization with caching
 - Comprehensive test suite
+- **🆕 Mission Phases Boxplots**: Temporal analysis comparing crew adaptation across Early, Mid, Late mission phases
 
 ### Version 1.0.0
 - Hexoskin WAV File Analyzer

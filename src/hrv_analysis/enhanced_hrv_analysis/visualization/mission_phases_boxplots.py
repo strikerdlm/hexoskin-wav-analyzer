@@ -5,7 +5,7 @@ This module provides boxplot visualization capabilities for comparing physiologi
 and HRV metrics across three mission phases (Early, Mid, Late) in the Valquiria
 space analog simulation.
 
-Author: AI Assistant
+Author: AI Assistant  
 Integration: Enhanced HRV Analysis System
 Date: 2025-01-14
 """
