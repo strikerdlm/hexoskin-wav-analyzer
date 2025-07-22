@@ -691,25 +691,57 @@ class MissionPhasesBoxplotGenerator:
             # Add normal range background first (so it appears behind boxplots)
             self._add_plotly_reference_ranges(fig, metric)
             
-            # Add boxplots for each phase
-            for i, (phase, values) in enumerate(phase_data.items()):
+            # Add boxplots for each phase with proper positioning
+            phase_positions = {'Early': 0, 'Mid': 1, 'Late': 2}
+            
+            for phase, values in phase_data.items():
+                if len(values) == 0:
+                    continue
+                    
+                # Calculate 95% CI for the median using bootstrap
+                median_ci = self._calculate_median_ci(values)
+                
+                # Calculate statistics
+                median_val = np.median(values)
+                q1_val = np.percentile(values, 25)
+                q3_val = np.percentile(values, 75)
+                
                 fig.add_trace(go.Box(
                     y=values,
                     name=phase,
-                    x=[phase] * len(values),  # Position on x-axis
-                    boxpoints='outliers',
-                    marker_color=phase_colors[phase],
-                    marker_line_color='rgb(8,48,107)',
-                    marker_line_width=1.5,
-                    marker_size=4,
-                    line_color='rgb(8,48,107)',
+                    x=[phase_positions[phase]] * len(values),
+                    boxpoints='outliers',  # Show outliers
+                    marker=dict(
+                        color=phase_colors[phase],
+                        line=dict(color='rgb(8,48,107)', width=1.5),
+                        size=4,
+                        opacity=0.8
+                    ),
+                    line=dict(color='rgb(8,48,107)', width=2),
                     fillcolor=phase_colors[phase],
-                    opacity=0.7,
+                    opacity=0.8,
+                    notched=True,  # Enable notched boxplots for CI
+                    notchwidth=0.5,  # Width of notch
+                    # Custom hover template with statistics
                     hovertemplate=(
                         f'<b>{phase} Phase</b><br>'
                         f'{metric}: %{{y:.2f}}<br>'
-                        f'<extra></extra>'
-                    )
+                        f'Median: {median_val:.2f}<br>'
+                        f'Q1: {q1_val:.2f}<br>'
+                        f'Q3: {q3_val:.2f}<br>'
+                        f'95% CI: [{median_ci[0]:.2f}, {median_ci[1]:.2f}]<br>'
+                        f'N: {len(values)}<br>'
+                        '<extra></extra>'
+                    ),
+                    # Add custom data for statistics
+                    customdata=[{
+                        'median': median_val,
+                        'q1': q1_val,
+                        'q3': q3_val,
+                        'ci_lower': median_ci[0],
+                        'ci_upper': median_ci[1],
+                        'n': len(values)
+                    }] * len(values)
                 ))
             
             # Add statistical test results
@@ -733,7 +765,10 @@ class MissionPhasesBoxplotGenerator:
                     tickfont=dict(size=12, color='#2C3E50'),
                     showgrid=True,
                     gridcolor='rgba(128,128,128,0.2)',
-                    zeroline=False
+                    zeroline=False,
+                    tickmode='array',
+                    tickvals=[0, 1, 2],
+                    ticktext=['Early', 'Mid', 'Late']
                 ),
                 yaxis=dict(
                     title=clean_metric,
@@ -1210,3 +1245,37 @@ class MissionPhasesBoxplotGenerator:
             logger.info(f"  • ... and {len(available_metrics) - 10} more")
         
         return df 
+
+    def _calculate_median_ci(self, values: np.ndarray, confidence_level: float = 0.95) -> Tuple[float, float]:
+        """
+        Calculate bootstrap confidence interval for the median.
+        
+        Args:
+            values: Array of values
+            confidence_level: Confidence level (default 0.95 for 95% CI)
+            
+        Returns:
+            Tuple of (lower_ci, upper_ci)
+        """
+        if len(values) < 3:
+            # For very small samples, return range-based CI
+            median_val = np.median(values)
+            data_range = np.ptp(values) if len(values) > 1 else 0
+            return (median_val - data_range * 0.5, median_val + data_range * 0.5)
+        
+        # Bootstrap resampling
+        n_bootstrap = min(1000, max(100, len(values) * 10))
+        bootstrap_medians = []
+        
+        np.random.seed(42)  # For reproducibility
+        for _ in range(n_bootstrap):
+            bootstrap_sample = np.random.choice(values, size=len(values), replace=True)
+            bootstrap_medians.append(np.median(bootstrap_sample))
+        
+        bootstrap_medians = np.array(bootstrap_medians)
+        alpha = 1 - confidence_level
+        lower_percentile = (alpha / 2) * 100
+        upper_percentile = (1 - alpha / 2) * 100
+        
+        return (np.percentile(bootstrap_medians, lower_percentile),
+                np.percentile(bootstrap_medians, upper_percentile)) 

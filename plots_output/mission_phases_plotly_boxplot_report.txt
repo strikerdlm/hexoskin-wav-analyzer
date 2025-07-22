@@ -2,15 +2,15 @@ VALQUIRIA MISSION PHASES - INTERACTIVE BOXPLOT ANALYSIS
 ENHANCED HRV ANALYSIS WITH PLOTLY VISUALIZATIONS
 ============================================================
 
-Analysis Date: 2025-07-21 21:18:21
+Analysis Date: 2025-07-21 22:08:51
 Visualization: Interactive Plotly Boxplots
 Mission: Valquiria Space Analog Simulation
 
 MISSION PHASE DEFINITIONS:
 ------------------------------
-Early Phase: Sol 0.0 - 0.3
-Mid Phase: Sol 0.3 - 0.7
-Late Phase: Sol 0.7 - 1.0
+Early Phase: Sol 0.0 - 0.0
+Mid Phase: Sol 0.0 - 0.0
+Late Phase: Sol 0.0 - 0.0
 
 DATASET SUMMARY:
 ------------------
@@ -18,9 +18,9 @@ Total subject-session combinations: 37
 Unique subjects: 8
 
 Phase distribution:
-  Early: 37 combinations (100.0%)
-  Mid: 0 combinations (0.0%)
-  Late: 0 combinations (0.0%)
+  Early: 12 combinations (32.4%)
+  Mid: 12 combinations (32.4%)
+  Late: 13 combinations (35.1%)
 
 GENERATED INTERACTIVE PLOTS:
 --------------------------------
