@@ -66,6 +66,15 @@ except ImportError as e:
 
     from enhanced_hrv_analysis.gui.settings_panel import SettingsPanel
 
+# Import mission phases boxplot generator
+try:
+    from visualization.mission_phases_boxplots import MissionPhasesBoxplotGenerator
+except ImportError:
+    try:
+        from enhanced_hrv_analysis.visualization.mission_phases_boxplots import MissionPhasesBoxplotGenerator
+    except ImportError:
+        MissionPhasesBoxplotGenerator = None
+
 logger = logging.getLogger(__name__)
 
 class HRVAnalysisApp:
@@ -138,6 +147,13 @@ class HRVAnalysisApp:
         self.advanced_stats = AdvancedStats(n_bootstrap=50)  # Reduced from 1000
         self.hrv_clustering = HRVClustering()
         self.hrv_forecasting = HRVForecasting()
+        
+        # Initialize mission phases boxplot generator
+        if MissionPhasesBoxplotGenerator:
+            self.mission_phases_generator = MissionPhasesBoxplotGenerator()
+        else:
+            self.mission_phases_generator = None
+            logger.warning("Mission phases boxplot generator not available")
         
         # Application state
         self.loaded_data = None
@@ -554,12 +570,32 @@ class HRVAnalysisApp:
                   command=self._generate_gam_custom_analysis,
                   style='Info.TButton').grid(row=2, column=1, padx=5, pady=5, sticky="ew")
         
-        # Description label for GAM analysis
+        # Row 3 - Mission Phases Boxplots (New Feature)
+        ttk.Button(buttons_frame, text="Mission Phases - Individual", 
+                  command=self._generate_individual_mission_phases,
+                  style='Success.TButton').grid(row=3, column=0, padx=5, pady=5, sticky="ew")
+        
+        ttk.Button(buttons_frame, text="Mission Phases - Group", 
+                  command=self._generate_group_mission_phases,
+                  style='Success.TButton').grid(row=3, column=1, padx=5, pady=5, sticky="ew")
+        
+        ttk.Button(buttons_frame, text="Mission Phases - Report", 
+                  command=self._generate_mission_phases_report,
+                  style='Success.TButton').grid(row=3, column=2, padx=5, pady=5, sticky="ew")
+        
+        # Description labels
         gam_desc_label = ttk.Label(main_frame,
                                   text="GAM Analysis: Advanced statistical modeling with trend lines and confidence intervals for crew-wide analysis",
                                   font=('Helvetica', 9),
                                   foreground='#555555')
         gam_desc_label.pack(pady=(5, 0))
+        
+        # Mission phases description
+        phases_desc_label = ttk.Label(main_frame,
+                                     text="Mission Phases: Compare physiological adaptation across Early, Mid, and Late mission phases",
+                                     font=('Helvetica', 9),
+                                     foreground='#2D5A27')
+        phases_desc_label.pack(pady=(2, 0))
         
         # Status display
         self.plot_status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
@@ -3442,6 +3478,123 @@ Special Thanks:
             # Don't immediately disconnect - user might just be switching windows
             # Only disconnect if window is actually closed/minimized
             pass
+    
+    def _generate_individual_mission_phases(self):
+        """Generate individual mission phases boxplots."""
+        try:
+            if not self.analysis_results:
+                messagebox.showwarning("Warning", "Please run an analysis first to generate mission phases boxplots.")
+                return
+            
+            if not self.mission_phases_generator:
+                messagebox.showerror("Error", "Mission phases boxplot generator is not available.")
+                return
+            
+            self.plot_status_label.configure(text="Generating individual mission phases boxplots...")
+            self.root.update_idletasks()
+            
+            # Prepare data from analysis results
+            df, mission_phases = self.mission_phases_generator.prepare_mission_data(self.analysis_results)
+            
+            # Generate individual boxplots
+            individual_plot_path = self.mission_phases_generator.generate_individual_boxplots(df, mission_phases)
+            
+            success_text = f"✅ Individual mission phases boxplots generated!\nSaved to: {individual_plot_path}"
+            self.plot_status_label.configure(text=success_text)
+            
+            # Open the plot file
+            self._open_plot_file(Path(individual_plot_path))
+            
+        except Exception as e:
+            logger.error(f"Error generating individual mission phases boxplots: {e}")
+            self.plot_status_label.configure(text=f"❌ Error: {e}")
+            messagebox.showerror("Error", f"Failed to generate individual mission phases boxplots: {e}")
+    
+    def _generate_group_mission_phases(self):
+        """Generate group mission phases boxplots."""
+        try:
+            if not self.analysis_results:
+                messagebox.showwarning("Warning", "Please run an analysis first to generate mission phases boxplots.")
+                return
+            
+            if not self.mission_phases_generator:
+                messagebox.showerror("Error", "Mission phases boxplot generator is not available.")
+                return
+            
+            self.plot_status_label.configure(text="Generating group mission phases boxplots...")
+            self.root.update_idletasks()
+            
+            # Prepare data from analysis results
+            df, mission_phases = self.mission_phases_generator.prepare_mission_data(self.analysis_results)
+            
+            # Generate group boxplots
+            group_plot_path = self.mission_phases_generator.generate_group_boxplots(df, mission_phases)
+            
+            success_text = f"✅ Group mission phases boxplots generated!\nSaved to: {group_plot_path}"
+            self.plot_status_label.configure(text=success_text)
+            
+            # Open the plot file
+            self._open_plot_file(Path(group_plot_path))
+            
+        except Exception as e:
+            logger.error(f"Error generating group mission phases boxplots: {e}")
+            self.plot_status_label.configure(text=f"❌ Error: {e}")
+            messagebox.showerror("Error", f"Failed to generate group mission phases boxplots: {e}")
+    
+    def _generate_mission_phases_report(self):
+        """Generate comprehensive mission phases analysis report."""
+        try:
+            if not self.analysis_results:
+                messagebox.showwarning("Warning", "Please run an analysis first to generate mission phases report.")
+                return
+            
+            if not self.mission_phases_generator:
+                messagebox.showerror("Error", "Mission phases boxplot generator is not available.")
+                return
+            
+            self.plot_status_label.configure(text="Generating mission phases analysis (individual + group + report)...")
+            self.root.update_idletasks()
+            
+            # Prepare data from analysis results
+            df, mission_phases = self.mission_phases_generator.prepare_mission_data(self.analysis_results)
+            
+            # Generate both plots
+            individual_plot_path = self.mission_phases_generator.generate_individual_boxplots(df, mission_phases)
+            group_plot_path = self.mission_phases_generator.generate_group_boxplots(df, mission_phases)
+            
+            # Generate comprehensive report
+            report_path = self.mission_phases_generator.generate_comprehensive_report(
+                df, mission_phases, individual_plot_path, group_plot_path
+            )
+            
+            success_text = f"✅ Complete mission phases analysis generated!\n"
+            success_text += f"Individual plots: {individual_plot_path}\n"
+            success_text += f"Group plots: {group_plot_path}\n"
+            success_text += f"Report: {report_path}"
+            self.plot_status_label.configure(text=success_text)
+            
+            # Show completion message
+            completion_message = (
+                "🎉 Mission Phases Analysis Complete!\n\n"
+                "Generated Files:\n"
+                f"• Individual Boxplots: {Path(individual_plot_path).name}\n"
+                f"• Group Boxplots: {Path(group_plot_path).name}\n"
+                f"• Comprehensive Report: {Path(report_path).name}\n\n"
+                "All files saved to plots_output/ folder.\n"
+                "The individual and group boxplots will open automatically."
+            )
+            
+            messagebox.showinfo("Analysis Complete", completion_message)
+            
+            # Open the plot files
+            self._open_plot_file(Path(individual_plot_path))
+            self._open_plot_file(Path(group_plot_path))
+            
+        except Exception as e:
+            logger.error(f"Error generating mission phases report: {e}")
+            self.plot_status_label.configure(text=f"❌ Error: {e}")
+            messagebox.showerror("Error", f"Failed to generate mission phases analysis: {e}")
+
 
 def main():
     """Main entry point for the application.""" 
