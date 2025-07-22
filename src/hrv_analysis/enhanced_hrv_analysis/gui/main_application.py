@@ -3841,48 +3841,282 @@ Special Thanks:
             
             success_text = f"✅ Interactive Plotly boxplots generated!\n"
             success_text += f"Created {len(individual_plots)} individual metric plots\n"
-            success_text += f"All plots saved to plots_output/ folder\n"
-            success_text += f"Report: {Path(report_path).name if report_path else 'N/A'}"
+            success_text += f"All plots saved to plots_output/ folder"
             self.plot_status_label.configure(text=success_text)
             
-            # Show completion message with plot details
-            plot_names = [Path(p).stem.replace('mission_phases_', '').replace('_boxplot', '').replace('_', ' ').title() 
-                         for p in individual_plots]
-            
-            completion_message = (
-                "🎉 Interactive Plotly Boxplots Generated!\n\n"
-                f"✅ Created {len(individual_plots)} individual metric plots:\n"
-                + "\n".join([f"• {name}" for name in plot_names[:10]])  # Show first 10
-                + (f"\n• ... and {len(plot_names)-10} more" if len(plot_names) > 10 else "") + "\n\n"
-                "Features:\n"
-                "• Interactive hover information\n"
-                "• Normal reference ranges (green bands)\n"
-                "• Statistical significance testing\n"
-                "• Zoom, pan, and export capabilities\n"
-                "• Professional aerospace medicine styling\n\n"
-                f"Mission Phases: Early (Sol {mission_phases.get('Early', (0,0))[0]:.1f}-"
-                f"{mission_phases.get('Early', (0,0))[1]:.1f}), "
-                f"Mid (Sol {mission_phases.get('Mid', (0,0))[0]:.1f}-"
-                f"{mission_phases.get('Mid', (0,0))[1]:.1f}), "
-                f"Late (Sol {mission_phases.get('Late', (0,0))[0]:.1f}-"
-                f"{mission_phases.get('Late', (0,0))[1]:.1f})\n\n"
-                "All files saved to plots_output/ folder and will open in your browser."
-            )
-            
-            messagebox.showinfo("Plotly Boxplots Complete", completion_message)
-            
-            # Open the first few plot files to demonstrate
-            for i, plot_path in enumerate(individual_plots[:3]):  # Open first 3 plots
-                self._open_plot_file(Path(plot_path))
-                
-            # Also open the report
-            if report_path:
-                self._open_plot_file(Path(report_path))
+            # Show plot selection dialog
+            self._show_plotly_plot_selection_dialog(individual_plots, report_path, mission_phases)
             
         except Exception as e:
             logger.error(f"Error generating Plotly boxplots: {e}")
             self.plot_status_label.configure(text=f"❌ Error: {e}")
             messagebox.showerror("Error", f"Failed to generate interactive Plotly boxplots: {e}")
+    
+    def _show_plotly_plot_selection_dialog(self, individual_plots: List[str], report_path: str, mission_phases: Dict):
+        """Show dialog for selecting which Plotly plots to view."""
+        if not individual_plots:
+            messagebox.showwarning("No Plots", "No plots were generated.")
+            return
+            
+        # Create the selection dialog
+        selection_dialog = tk.Toplevel(self.root)
+        selection_dialog.title(f"Interactive Plot Selector - {len(individual_plots)} Plots Generated")
+        selection_dialog.geometry("800x700")
+        selection_dialog.transient(self.root)
+        selection_dialog.grab_set()
+        
+        # Header
+        header_frame = ttk.Frame(selection_dialog)
+        header_frame.pack(fill=tk.X, padx=15, pady=10)
+        
+        ttk.Label(header_frame, 
+                 text="🎯 Interactive Plotly Boxplot Selection", 
+                 font=('Helvetica', 16, 'bold')).pack()
+        
+        info_text = (f"✅ Generated {len(individual_plots)} individual metric plots\n"
+                    f"📊 Mission Phases: Early, Mid, Late\n"
+                    f"🔬 Each plot includes statistical testing & reference ranges")
+        ttk.Label(header_frame, text=info_text, 
+                 font=('Helvetica', 9), justify=tk.CENTER).pack(pady=5)
+        
+        # Organize plots by domain
+        plot_domains = self._organize_plots_by_domain(individual_plots)
+        
+        # Main content frame with scrollbar
+        main_frame = ttk.Frame(selection_dialog)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=15)
+        
+        # Canvas and scrollbar for scrolling
+        canvas = tk.Canvas(main_frame)
+        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Plot checkboxes organized by domain
+        plot_vars = {}
+        domain_vars = {}
+        
+        for domain, plots in plot_domains.items():
+            if not plots:  # Skip empty domains
+                continue
+                
+            # Domain frame
+            domain_frame = ttk.LabelFrame(scrollable_frame, text=f"🔹 {domain} ({len(plots)} plots)", padding="10")
+            domain_frame.pack(fill=tk.X, pady=5, padx=5)
+            
+            # Select all for domain checkbox
+            domain_var = tk.BooleanVar()
+            domain_checkbox = ttk.Checkbutton(domain_frame, 
+                                            text=f"📋 Select All {domain}", 
+                                            variable=domain_var,
+                                            command=lambda d=domain, dv=domain_var: self._toggle_domain_selection(d, dv, plot_vars))
+            domain_checkbox.pack(anchor=tk.W, pady=(0, 5))
+            domain_vars[domain] = domain_var
+            
+            # Individual plot checkboxes
+            plots_inner_frame = ttk.Frame(domain_frame)
+            plots_inner_frame.pack(fill=tk.X)
+            plots_inner_frame.columnconfigure((0, 1), weight=1)
+            
+            for i, plot_path in enumerate(plots):
+                plot_name = self._format_plot_name_for_display(plot_path)
+                
+                var = tk.BooleanVar()
+                chk = ttk.Checkbutton(plots_inner_frame, 
+                                    text=f"📊 {plot_name}", 
+                                    variable=var)
+                
+                # Arrange in 2 columns for better space usage
+                row = i // 2
+                col = i % 2
+                chk.grid(row=row, column=col, sticky=tk.W, padx=(20, 10), pady=2)
+                
+                plot_vars[plot_path] = var
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Button frame
+        button_frame = ttk.Frame(selection_dialog)
+        button_frame.pack(fill=tk.X, padx=15, pady=(10, 15))
+        button_frame.columnconfigure((0, 1, 2, 3, 4), weight=1)
+        
+        # Quick selection buttons
+        ttk.Button(button_frame, text="✅ Select All",
+                  command=lambda: self._select_all_plots(plot_vars, domain_vars)).grid(row=0, column=0, padx=5, sticky="ew")
+        
+        ttk.Button(button_frame, text="❌ Clear All",
+                  command=lambda: self._clear_all_plots(plot_vars, domain_vars)).grid(row=0, column=1, padx=5, sticky="ew")
+        
+        ttk.Button(button_frame, text="🎯 Top 5 Key Metrics",
+                  command=lambda: self._select_key_metrics(plot_vars, individual_plots)).grid(row=0, column=2, padx=5, sticky="ew")
+        
+        # Action buttons
+        def open_selected_plots():
+            selected_plots = [path for path, var in plot_vars.items() if var.get()]
+            
+            if not selected_plots:
+                messagebox.showwarning("No Selection", "Please select at least one plot to view.")
+                return
+            
+            selection_dialog.destroy()
+            
+            # Update status
+            self.plot_status_label.configure(text=f"Opening {len(selected_plots)} selected plots...")
+            self.root.update_idletasks()
+            
+            # Open selected plots
+            for plot_path in selected_plots:
+                self._open_plot_file(Path(plot_path))
+                
+            # Also open the report
+            if report_path:
+                self._open_plot_file(Path(report_path))
+                
+            # Final status update
+            final_status = f"✅ Opened {len(selected_plots)} interactive plots"
+            if report_path:
+                final_status += f" + report"
+            self.plot_status_label.configure(text=final_status)
+            
+            # Show summary message
+            plot_names = [self._format_plot_name_for_display(p) for p in selected_plots]
+            summary_msg = f"🎉 Successfully opened {len(selected_plots)} interactive plots!\n\n"
+            summary_msg += "📊 Selected plots:\n" + "\n".join([f"• {name}" for name in plot_names[:10]])
+            if len(plot_names) > 10:
+                summary_msg += f"\n• ... and {len(plot_names)-10} more"
+            summary_msg += f"\n\n🔬 All plots include:\n• Interactive hover data\n• Statistical testing\n• Normal reference ranges\n• Zoom/pan capabilities"
+            
+            messagebox.showinfo("Plots Opened", summary_msg)
+        
+        def open_report_only():
+            selection_dialog.destroy()
+            if report_path:
+                self._open_plot_file(Path(report_path))
+                self.plot_status_label.configure(text="✅ Opened analysis report")
+            else:
+                messagebox.showinfo("No Report", "No report file was generated.")
+        
+        # Main action buttons
+        ttk.Button(button_frame, text="🚀 Open Selected Plots",
+                  command=open_selected_plots,
+                  style='Accent.TButton').grid(row=1, column=0, columnspan=2, padx=5, pady=(5, 0), sticky="ew")
+        
+        ttk.Button(button_frame, text="📄 View Report Only",
+                  command=open_report_only).grid(row=1, column=2, padx=5, pady=(5, 0), sticky="ew")
+        
+        ttk.Button(button_frame, text="❌ Cancel",
+                  command=selection_dialog.destroy).grid(row=1, column=3, padx=5, pady=(5, 0), sticky="ew")
+        
+        # Focus on dialog
+        selection_dialog.focus_set()
+        
+    def _organize_plots_by_domain(self, individual_plots: List[str]) -> Dict[str, List[str]]:
+        """Organize plots by HRV domain for better user experience."""
+        domains = {
+            "Time Domain": [],
+            "Frequency Domain": [],
+            "Nonlinear Analysis": [],
+            "Autonomic Balance": [],
+            "Other Metrics": []
+        }
+        
+        for plot_path in individual_plots:
+            plot_name = Path(plot_path).stem.lower()
+            
+            # Classify by domain based on metric name patterns
+            if any(pattern in plot_name for pattern in ['sdnn', 'rmssd', 'pnn', 'mean_hr', 'cvnn', 'nn50']):
+                domains["Time Domain"].append(plot_path)
+            elif any(pattern in plot_name for pattern in ['lf_power', 'hf_power', 'vlf_power', 'lf_hf_ratio', 'total_power', '_nu', '_peak']):
+                domains["Frequency Domain"].append(plot_path)
+            elif any(pattern in plot_name for pattern in ['sd1', 'sd2', 'dfa', 'entropy', 'apen', 'tinn']):
+                domains["Nonlinear Analysis"].append(plot_path)
+            elif any(pattern in plot_name for pattern in ['parasympathetic', 'sympathetic', 'ans', 'autonomic', 'vagal', 'stress']):
+                domains["Autonomic Balance"].append(plot_path)
+            else:
+                domains["Other Metrics"].append(plot_path)
+        
+        # Remove empty domains
+        return {domain: plots for domain, plots in domains.items() if plots}
+    
+    def _format_plot_name_for_display(self, plot_path: str) -> str:
+        """Format plot filename for display in the selection dialog."""
+        plot_name = Path(plot_path).stem
+        # Remove mission_phases_ prefix and _boxplot suffix
+        clean_name = plot_name.replace('mission_phases_', '').replace('_boxplot', '')
+        # Convert to readable format
+        clean_name = clean_name.replace('_', ' ').title()
+        # Handle special cases
+        clean_name = clean_name.replace('Lf ', 'LF ').replace('Hf ', 'HF ').replace('Vlf ', 'VLF ')
+        clean_name = clean_name.replace('Sdnn', 'SDNN').replace('Rmssd', 'RMSSD')
+        clean_name = clean_name.replace('Pnn', 'pNN').replace('Dfa ', 'DFA ')
+        clean_name = clean_name.replace('Hr', 'HR').replace('Sd1', 'SD1').replace('Sd2', 'SD2')
+        return clean_name
+    
+    def _toggle_domain_selection(self, domain: str, domain_var: tk.BooleanVar, plot_vars: Dict):
+        """Toggle all plots in a domain on/off."""
+        select_state = domain_var.get()
+        for path, var in plot_vars.items():
+            plot_name = Path(path).stem.lower()
+            
+            # Check if this plot belongs to the current domain
+            belongs_to_domain = False
+            if domain == "Time Domain" and any(pattern in plot_name for pattern in ['sdnn', 'rmssd', 'pnn', 'mean_hr', 'cvnn', 'nn50']):
+                belongs_to_domain = True
+            elif domain == "Frequency Domain" and any(pattern in plot_name for pattern in ['lf_power', 'hf_power', 'vlf_power', 'lf_hf_ratio', 'total_power', '_nu', '_peak']):
+                belongs_to_domain = True
+            elif domain == "Nonlinear Analysis" and any(pattern in plot_name for pattern in ['sd1', 'sd2', 'dfa', 'entropy', 'apen', 'tinn']):
+                belongs_to_domain = True
+            elif domain == "Autonomic Balance" and any(pattern in plot_name for pattern in ['parasympathetic', 'sympathetic', 'ans', 'autonomic', 'vagal', 'stress']):
+                belongs_to_domain = True
+            elif domain == "Other Metrics" and not any(pattern in plot_name for pattern in ['sdnn', 'rmssd', 'pnn', 'mean_hr', 'cvnn', 'nn50', 'lf_power', 'hf_power', 'vlf_power', 'lf_hf_ratio', 'total_power', '_nu', '_peak', 'sd1', 'sd2', 'dfa', 'entropy', 'apen', 'tinn', 'parasympathetic', 'sympathetic', 'ans', 'autonomic', 'vagal', 'stress']):
+                belongs_to_domain = True
+                
+            if belongs_to_domain:
+                var.set(select_state)
+    
+    def _select_all_plots(self, plot_vars: Dict, domain_vars: Dict):
+        """Select all plots."""
+        for var in plot_vars.values():
+            var.set(True)
+        for var in domain_vars.values():
+            var.set(True)
+    
+    def _clear_all_plots(self, plot_vars: Dict, domain_vars: Dict):
+        """Clear all plot selections."""
+        for var in plot_vars.values():
+            var.set(False)
+        for var in domain_vars.values():
+            var.set(False)
+    
+    def _select_key_metrics(self, plot_vars: Dict, individual_plots: List[str]):
+        """Select the top 5 most important HRV metrics."""
+        key_metrics = ['sdnn', 'rmssd', 'lf_hf_ratio', 'mean_hr', 'hf_power']
+        
+        # Clear all first
+        for var in plot_vars.values():
+            var.set(False)
+        
+        # Select key metrics
+        selected_count = 0
+        for path, var in plot_vars.items():
+            plot_name = Path(path).stem.lower()
+            for key_metric in key_metrics:
+                if key_metric in plot_name:
+                    var.set(True)
+                    selected_count += 1
+                    break
+        
+        messagebox.showinfo("Key Metrics Selected", 
+                          f"Selected {selected_count} key HRV metrics:\n"
+                          "• SDNN (Overall HRV)\n"
+                          "• RMSSD (Parasympathetic Activity)\n" 
+                          "• LF/HF Ratio (Autonomic Balance)\n"
+                          "• Mean HR (Heart Rate)\n"
+                          "• HF Power (Vagal Tone)")
 
 
 def main():
