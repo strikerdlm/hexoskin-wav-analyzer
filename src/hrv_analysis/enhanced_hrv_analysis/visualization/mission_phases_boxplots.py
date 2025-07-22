@@ -769,8 +769,7 @@ class MissionPhasesBoxplotGenerator:
             # Update layout
             fig.update_layout(
                 title=dict(
-                    text=f'<b>{clean_metric} by Mission Phase</b><br>'
-                         f'<span style="font-size:12px">Valquiria Space Analog Mission - Crew Analysis</span>',
+                    text=f'<b>{clean_metric} by Mission Phase</b>',
                     x=0.5,
                     font=dict(size=16, color='#2C3E50')
                 ),
