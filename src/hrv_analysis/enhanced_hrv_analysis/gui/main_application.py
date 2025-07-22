@@ -3908,7 +3908,7 @@ Special Thanks:
             domain_frame.pack(fill=tk.X, pady=5, padx=5)
             
             # Select all for domain checkbox
-            domain_var = tk.BooleanVar()
+            domain_var = tk.BooleanVar(master=selection_dialog)
             domain_checkbox = ttk.Checkbutton(domain_frame, 
                                             text=f"📋 Select All {domain}", 
                                             variable=domain_var,
@@ -3924,7 +3924,7 @@ Special Thanks:
             for i, plot_path in enumerate(plots):
                 plot_name = self._format_plot_name_for_display(plot_path)
                 
-                var = tk.BooleanVar()
+                var = tk.BooleanVar(master=selection_dialog)
                 chk = ttk.Checkbutton(plots_inner_frame, 
                                     text=f"📊 {plot_name}", 
                                     variable=var)
