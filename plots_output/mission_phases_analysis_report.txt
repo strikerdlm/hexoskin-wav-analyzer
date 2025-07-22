@@ -1,0 +1,58 @@
+VALQUIRIA MISSION PHASES ANALYSIS REPORT
+ENHANCED HRV ANALYSIS INTEGRATION
+=======================================================
+
+Analysis Date: 2025-07-21 19:51:12
+Integration: Enhanced HRV Analysis System
+Mission: Valquiria Space Analog Simulation
+
+MISSION PHASE DEFINITIONS:
+------------------------------
+Early Phase: Sol 2.0 - 6.7
+Mid Phase: Sol 6.7 - 11.3
+Late Phase: Sol 11.3 - 16.0
+
+DATASET SUMMARY:
+------------------
+Total subject-session combinations: 37
+Unique subjects: 8
+
+Phase distribution:
+  Early: 16 combinations (43.2%)
+  Mid: 9 combinations (24.3%)
+  Late: 12 combinations (32.4%)
+
+METRICS ANALYZED:
+--------------------
+HRV Metrics:
+  • SDNN
+  • RMSSD
+  • HF_Power
+  • LF_Power
+  • LF_HF_Ratio
+  • VLF_Power
+
+Physiological Metrics:
+  • Mean_HR
+  • pNN50
+  • heart_rate_mean
+  • breathing_rate_mean
+  • activity_mean
+  • spo2_mean
+
+GENERATED FILES:
+------------------
+• plots_output\individual_mission_phases_boxplots.png - Individual crew member comparisons
+• plots_output\group_mission_phases_boxplots.png - Group phase comparisons
+• plots_output\mission_phases_analysis_report.txt - This comprehensive report
+
+ANALYSIS NOTES:
+----------------
+• Boxplots show distribution of metrics across three mission phases
+• Individual plots highlight crew member variability
+• Group plots reveal population-level temporal trends
+• Statistical tests (Kruskal-Wallis) assess phase differences
+• Integration with Enhanced HRV Analysis provides robust metric calculation
+
+INTEGRATION SUCCESS: Mission phases boxplots successfully integrated
+with the Enhanced HRV Analysis System for comprehensive crew monitoring.

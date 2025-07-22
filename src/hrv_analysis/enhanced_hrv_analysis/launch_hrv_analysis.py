@@ -24,7 +24,7 @@ import time
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
 
-# CRITICAL: Set correct working directory to prevent plots being exported 
+# CRITICAL: Set correct working directory to prevent plots being exported
 # to wrong location
 # Project root should be: C:\Users\User\OneDrive\FAC\Research\Valquiria\Data
 project_root = current_dir.parent.parent.parent
@@ -67,9 +67,11 @@ class SplashScreen:
         main_frame.pack(fill='both', expand=True)
         
         # Title
+        title_text = ("HRV Analysis for the Valquiria Analog "
+                      "Space Mission Simulation")
         title_label = tk.Label(
             main_frame,
-            text="HRV Analysis for the Valquiria Analog Space Mission Simulation",
+            text=title_text,
             font=('Arial', 20, 'bold'),
             fg='#ECF0F1',
             bg='#2C3E50',
@@ -79,9 +81,13 @@ class SplashScreen:
         title_label.pack(pady=(0, 20))
         
         # Author and organization
+        author_text = ("by Dr. Diego Malpica MD\n"
+                      "Directorate of Aerospace Medicine\n"
+                      "Colombian Aerospace Force\n"
+                      "Aerospace Scientific Department")
         author_label = tk.Label(
             main_frame,
-            text="by Dr. Diego Malpica MD\nDirectorate of Aerospace Medicine\nColombian Aerospace Force\nAerospace Scientific Department",
+            text=author_text,
             font=('Arial', 12),
             fg='#BDC3C7',
             bg='#2C3E50',
@@ -96,12 +102,14 @@ class SplashScreen:
         # Progress bar
         style = ttk.Style()
         style.theme_use('clam')
-        style.configure("Loading.Horizontal.TProgressbar",
-                       background='#3498DB',
-                       troughcolor='#34495E',
-                       borderwidth=0,
-                       lightcolor='#3498DB',
-                       darkcolor='#3498DB')
+        style.configure(
+            "Loading.Horizontal.TProgressbar",
+            background='#3498DB',
+            troughcolor='#34495E',
+            borderwidth=0,
+            lightcolor='#3498DB',
+            darkcolor='#3498DB'
+        )
         
         self.progress_var = tk.DoubleVar()
         self.progress_bar = ttk.Progressbar(
@@ -145,7 +153,7 @@ class SplashScreen:
             bg='#2C3E50'
         )
         country_label.pack(pady=(3, 0))
-        
+    
     def update_progress(self, percentage, status_text="", details_text=""):
         """Update progress bar and percentage display."""
         if self.splash and self.splash.winfo_exists():
@@ -180,16 +188,27 @@ def setup_logging():
             except UnicodeEncodeError:
                 # Replace problematic Unicode characters
                 msg = super().format(record)
-                msg = msg.replace('✅', '[OK]').replace('❌', '[ERROR]').replace('⚠️', '[WARNING]')
-                msg = msg.replace('🚀', '').replace('📊', '').replace('🎉', '')
+                msg = (msg.replace('✅', '[OK]')
+                         .replace('❌', '[ERROR]')
+                         .replace('⚠️', '[WARNING]'))
+                msg = (msg.replace('🚀', '')
+                         .replace('📊', '')
+                         .replace('🎉', ''))
                 return msg
     
     # Create handlers with safe formatting
-    file_handler = logging.FileHandler(current_dir / 'hrv_analysis.log', encoding='utf-8')
-    file_handler.setFormatter(SafeFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    log_file = current_dir / 'hrv_analysis.log'
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_formatter = SafeFormatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    file_handler.setFormatter(file_formatter)
     
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(SafeFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    console_formatter = SafeFormatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    console_handler.setFormatter(console_formatter)
     
     logging.basicConfig(
         level=logging.INFO,
@@ -207,6 +226,7 @@ def setup_logging():
     logger.info("- Fast mode: Available (limits data size)")
     
     return logger
+
 
 def check_dependencies():
     """Check for required dependencies."""
@@ -259,15 +279,21 @@ def check_dependencies():
     
     return True
 
+
 def safe_print(text):
     """Safe print function that handles Unicode encoding issues on Windows."""
     try:
         print(text)
     except UnicodeEncodeError:
         # Replace problematic Unicode characters and try again
-        safe_text = text.replace('✅', '[OK]').replace('❌', '[ERROR]').replace('⚠️', '[WARNING]')
-        safe_text = safe_text.replace('🚀', '').replace('📊', '').replace('🎉', '')
+        safe_text = (text.replace('✅', '[OK]')
+                         .replace('❌', '[ERROR]')
+                         .replace('⚠️', '[WARNING]'))
+        safe_text = (safe_text.replace('🚀', '')
+                               .replace('📊', '')
+                               .replace('🎉', ''))
         print(safe_text)
+
 
 def load_application_with_progress(splash_screen, logger):
     """Load the main application with progress updates."""
@@ -275,7 +301,8 @@ def load_application_with_progress(splash_screen, logger):
         # Step 1: Check dependencies
         splash_screen.update_progress(10)
         if not check_dependencies():
-            logger.error("Cannot start application due to missing dependencies")
+            msg = "Cannot start application due to missing dependencies"
+            logger.error(msg)
             return None
         
         # Step 2: Import GUI components
@@ -284,9 +311,11 @@ def load_application_with_progress(splash_screen, logger):
             from gui.main_application import HRVAnalysisApp
         except ImportError as e:
             logger.error(f"Failed to import main application: {e}")
-            messagebox.showerror("Import Error", 
-                               f"Failed to import HRV Analysis application:\n{e}\n\n"
-                               "Please ensure all required modules are installed.")
+            messagebox.showerror(
+                "Import Error",
+                f"Failed to import HRV Analysis application:\n{e}\n\n"
+                "Please ensure all required modules are installed."
+            )
             return None
         
         # Step 3: Create main window
@@ -318,8 +347,10 @@ def load_application_with_progress(splash_screen, logger):
             app = HRVAnalysisApp(root, progress_callback=app_progress_callback)
         except Exception as e:
             logger.error(f"Failed to initialize HRV Analysis application: {e}")
-            messagebox.showerror("Initialization Error", 
-                               f"Failed to initialize HRV Analysis application:\n{e}")
+            messagebox.showerror(
+                "Initialization Error",
+                f"Failed to initialize HRV Analysis application:\n{e}"
+            )
             return None
         
         # Step 7: Finalize setup and maximize window
@@ -342,16 +373,21 @@ def load_application_with_progress(splash_screen, logger):
     except ImportError as e:
         logger.error(f"Failed to import GUI components: {e}")
         splash_screen.update_progress(0)
-        messagebox.showerror("Import Error", 
-                           f"Failed to import required components:\n{e}\n\n"
-                           "Please check your Python environment and dependencies.")
+        messagebox.showerror(
+            "Import Error",
+            f"Failed to import required components:\n{e}\n\n"
+            "Please check your Python environment and dependencies."
+        )
         return None
     except Exception as e:
         logger.error(f"Error loading application: {e}")
         splash_screen.update_progress(0)
-        messagebox.showerror("Application Error", 
-                           f"Error loading application:\n{e}")
+        messagebox.showerror(
+            "Application Error",
+            f"Error loading application:\n{e}"
+        )
         return None
+
 
 def main():
     """Main entry point for the application."""
@@ -370,9 +406,11 @@ def main():
             splash.update_progress(0)
             time.sleep(3)
             splash.destroy()
-            messagebox.showerror("Startup Failed", 
-                               "Failed to start the HRV Analysis application.\n"
-                               "Check the log file for details.")
+            messagebox.showerror(
+                "Startup Failed",
+                "Failed to start the HRV Analysis application.\n"
+                "Check the log file for details."
+            )
             return 1
         
         root, app = result
@@ -416,13 +454,16 @@ def main():
         return 0
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
-        messagebox.showerror("Critical Error", 
-                           f"A critical error occurred:\n{e}\n\n"
-                           "The application will now close.")
+        messagebox.showerror(
+            "Critical Error",
+            f"A critical error occurred:\n{e}\n\n"
+            "The application will now close."
+        )
         return 1
     
     logger.info("Application finished successfully")
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main()) 

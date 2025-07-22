@@ -66,6 +66,15 @@ except ImportError as e:
 
     from enhanced_hrv_analysis.gui.settings_panel import SettingsPanel
 
+# Import HRV explanations module
+try:
+    from gui.hrv_metrics_explanations import show_hrv_explanations
+except ImportError:
+    try:
+        from enhanced_hrv_analysis.gui.hrv_metrics_explanations import show_hrv_explanations
+    except ImportError:
+        show_hrv_explanations = None
+
 # Import mission phases boxplot generator
 try:
     from visualization.mission_phases_boxplots import MissionPhasesBoxplotGenerator
@@ -653,6 +662,8 @@ class HRVAnalysisApp:
         # Help menu
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="HRV Metrics Explained", command=self._show_hrv_explanations)
+        help_menu.add_separator()
         help_menu.add_command(label="About", command=self._show_about)
         
     def _setup_status_bar(self):
@@ -3581,19 +3592,48 @@ Special Thanks:
                 f"• Group Boxplots: {Path(group_plot_path).name}\n"
                 f"• Comprehensive Report: {Path(report_path).name}\n\n"
                 "All files saved to plots_output/ folder.\n"
-                "The individual and group boxplots will open automatically."
+                "The plots and report will open automatically."
             )
             
             messagebox.showinfo("Analysis Complete", completion_message)
             
-            # Open the plot files
+            # Open the plot files and report
             self._open_plot_file(Path(individual_plot_path))
             self._open_plot_file(Path(group_plot_path))
+            self._open_plot_file(Path(report_path))
             
         except Exception as e:
             logger.error(f"Error generating mission phases report: {e}")
             self.plot_status_label.configure(text=f"❌ Error: {e}")
             messagebox.showerror("Error", f"Failed to generate mission phases analysis: {e}")
+
+    def _show_hrv_explanations(self):
+        """Show comprehensive HRV metrics scientific explanations."""
+        try:
+            if show_hrv_explanations is None:
+                messagebox.showerror(
+                    "Feature Unavailable",
+                    "HRV explanations module is not available.\n"
+                    "Please check your installation."
+                )
+                return
+            
+            # Pass current analysis results if available for context
+            metrics_data = {}
+            if self.analysis_results:
+                # Extract some basic metrics for context
+                for subject, result in self.analysis_results.items():
+                    if isinstance(result, dict) and 'hrv_results' in result:
+                        metrics_data[subject] = result['hrv_results']
+            
+            show_hrv_explanations(self.root, metrics_data)
+            
+        except Exception as e:
+            logger.error(f"Error showing HRV explanations: {e}")
+            messagebox.showerror(
+                "Error",
+                f"Could not open HRV explanations: {e}"
+            )
 
 
 def main():
