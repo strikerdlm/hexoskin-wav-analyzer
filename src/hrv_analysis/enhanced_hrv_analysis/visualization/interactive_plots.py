@@ -2156,18 +2156,18 @@ class InteractivePlotter:
 
     def create_elegant_metric_selector(self, analysis_results: Dict[str, Any]) -> go.Figure:
         """
-        Create a time series visualization with metric selection dropdown.
+        Create a publication-quality time series visualization with statistical aggregation.
         
-        This approach implements research-backed best practices:
-        - Avoids "spaghetti plots" with overlapping lines
-        - Uses progressive disclosure with metric-focused selection
-        - Shows one metric clearly across all subjects
-        - Provides clean, readable visualizations
+        Shows crew-wide statistics across Sol:
+        - Median values with smoothed trend curves
+        - 95% Confidence intervals 
+        - Interquartile range (IQR) shading
+        - Professional scientific journal styling
         
-        Based on research from University of Iowa, Mode.com, and visualization experts
-        who recommend small multiples and interactive selection over crowded plots.
+        This approach provides publication-ready visualizations focusing on population
+        trends rather than individual variability, suitable for scientific manuscripts.
         """
-        logger.info("Creating metric-focused time series with dropdown selection")
+        logger.info("Creating publication-quality metric-focused statistical visualization")
         
         # Log analysis results structure for debugging
         logger.debug(f"Analysis results keys: {list(analysis_results.keys())}")
@@ -2191,74 +2191,158 @@ class InteractivePlotter:
         # Create figure
         fig = go.Figure()
         
-        # Prepare data structure for all metrics
-        all_metrics_data = self._prepare_all_metrics_data(analysis_results, available_metrics_by_domain)
+        # Prepare statistical data for all metrics
+        statistical_data = self._prepare_statistical_metrics_data(analysis_results, available_metrics_by_domain)
         
-        if not all_metrics_data:
-            logger.error("No metric data could be extracted")
+        if not statistical_data:
+            logger.error("No statistical metric data could be calculated")
             logger.error("This usually means:")
             logger.error("1. HRV analysis hasn't been run yet")
             logger.error("2. Analysis results don't contain expected structure")
             logger.error("3. All metrics have NaN values")
-            raise ValueError("No valid metric data found for visualization. Please run HRV analysis first.")
+            raise ValueError("No valid statistical data found for visualization. Please run HRV analysis first.")
         
-        logger.info(f"Successfully extracted data for {len(all_metrics_data)} metrics")
+        logger.info(f"Successfully calculated statistics for {len(statistical_data)} metrics")
         
-        # Color palette for subjects
-        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
-        
-        # Add all traces (all metrics, all subjects) but make only first metric visible
+        # Add all statistical traces for each metric (make only first metric visible initially)
         first_metric = None
         trace_index = 0
         buttons = []
         
-        for metric_name, metric_data in all_metrics_data.items():
+        for metric_name, stats in statistical_data.items():
             if first_metric is None:
                 first_metric = metric_name
             
-            # Create visibility array for this metric
-            visible_for_this_metric = []
+            is_visible = (metric_name == first_metric)
             
-            for subject_name, subject_data in metric_data.items():
-                if subject_data:
-                    sols = [d['sol'] for d in subject_data]
-                    values = [d['value'] for d in subject_data]
+            # Create visibility indices for this metric's traces
+            metric_trace_indices = []
+            
+            # 1. IQR shading (Q1 to Q3)
+            fig.add_trace(go.Scatter(
+                x=stats['sols'] + stats['sols'][::-1],  # x, then x reversed
+                y=stats['q3'] + stats['q1'][::-1],      # upper, then lower reversed
+                fill='toself',
+                fillcolor='rgba(135, 206, 235, 0.2)',  # Light blue with transparency
+                line=dict(color='rgba(255,255,255,0)'),  # Invisible line
+                hoverinfo="skip",
+                showlegend=True,
+                name="IQR (25%-75%)",
+                visible=is_visible
+            ))
+            metric_trace_indices.append(trace_index)
+            trace_index += 1
+            
+            # 2. 95% CI shading
+            fig.add_trace(go.Scatter(
+                x=stats['sols'] + stats['sols'][::-1],
+                y=stats['ci_upper'] + stats['ci_lower'][::-1],
+                fill='toself',
+                fillcolor='rgba(70, 130, 180, 0.15)',   # Steel blue with transparency
+                line=dict(color='rgba(255,255,255,0)'),
+                hoverinfo="skip",
+                showlegend=True,
+                name="95% CI",
+                visible=is_visible
+            ))
+            metric_trace_indices.append(trace_index)
+            trace_index += 1
+            
+            # 3. Median points
+            fig.add_trace(go.Scatter(
+                x=stats['sols'],
+                y=stats['median'],
+                mode='markers',
+                marker=dict(
+                    size=8,
+                    color='#1f77b4',  # Professional blue
+                    symbol='circle',
+                    line=dict(width=2, color='white')
+                ),
+                name="Median",
+                hovertemplate=(
+                    f'<b>{self._get_metric_display_name(metric_name)}</b><br>'
+                    f'Sol: %{{x:.0f}}<br>'
+                    f'Median: %{{y:.2f}}<br>'
+                    f'IQR: %{{customdata[0]:.2f}} - %{{customdata[1]:.2f}}<br>'
+                    f'95% CI: %{{customdata[2]:.2f}} - %{{customdata[3]:.2f}}<br>'
+                    f'N subjects: %{{customdata[4]:.0f}}<br>'
+                    '<extra></extra>'
+                ),
+                customdata=list(zip(stats['q1'], stats['q3'], stats['ci_lower'], stats['ci_upper'], stats['n_subjects'])),
+                visible=is_visible
+            ))
+            metric_trace_indices.append(trace_index)
+            trace_index += 1
+            
+            # 4. Smoothed trend curve
+            if len(stats['sols']) >= 4:  # Need at least 4 points for smoothing
+                try:
+                    from scipy.interpolate import UnivariateSpline
                     
-                    is_visible = (metric_name == first_metric)
+                    # Create smoothed curve
+                    sols_smooth = np.linspace(min(stats['sols']), max(stats['sols']), len(stats['sols']) * 3)
+                    spline = UnivariateSpline(stats['sols'], stats['median'], s=len(stats['sols']) * 0.1)
+                    median_smooth = spline(sols_smooth)
                     
                     fig.add_trace(go.Scatter(
-                        x=sols,
-                        y=values,
-                        name=subject_name,
-                        mode='lines+markers',
+                        x=sols_smooth,
+                        y=median_smooth,
+                        mode='lines',
                         line=dict(
-                            width=2.5,
-                            color=colors[len(visible_for_this_metric) % len(colors)]
+                            width=3,
+                            color='#d62728',  # Professional red
+                            dash='solid'
                         ),
-                        marker=dict(
-                            size=6,
-                            symbol='circle',
-                            line=dict(width=1, color='white')
-                        ),
+                        name="Trend (Smoothed)",
                         hovertemplate=(
-                            f'<b>{subject_name}</b><br>'
+                            f'<b>Smoothed Trend</b><br>'
                             f'Sol: %{{x:.1f}}<br>'
-                            f'{self._get_metric_display_name(metric_name)}: %{{y:.2f}}<br>'
+                            f'Value: %{{y:.2f}}<br>'
                             '<extra></extra>'
                         ),
-                        connectgaps=False,
                         visible=is_visible
                     ))
+                    metric_trace_indices.append(trace_index)
+                    trace_index += 1
+                except ImportError:
+                    # Fallback: simple linear trend
+                    z = np.polyfit(stats['sols'], stats['median'], 1)
+                    trend_line = np.poly1d(z)
                     
-                    visible_for_this_metric.append(trace_index)
+                    fig.add_trace(go.Scatter(
+                        x=stats['sols'],
+                        y=trend_line(stats['sols']),
+                        mode='lines',
+                        line=dict(
+                            width=2,
+                            color='#d62728',
+                            dash='dash'
+                        ),
+                        name="Linear Trend",
+                        hovertemplate=(
+                            f'<b>Linear Trend</b><br>'
+                            f'Sol: %{{x:.0f}}<br>'
+                            f'Value: %{{y:.2f}}<br>'
+                            '<extra></extra>'
+                        ),
+                        visible=is_visible
+                    ))
+                    metric_trace_indices.append(trace_index)
                     trace_index += 1
             
             # Create dropdown button for this metric
-            if visible_for_this_metric:
+            if metric_trace_indices:
                 # Create visibility array (False for all traces, True for this metric's traces)
                 visibility = [False] * trace_index
-                for idx in visible_for_this_metric:
+                for idx in metric_trace_indices:
                     visibility[idx] = True
+                
+                # Get metric unit for Y-axis label
+                unit = self._get_metric_unit(metric_name.split('_')[-1]) if '_' in metric_name else ""
+                y_title = f"{self._get_metric_display_name(metric_name)}"
+                if unit:
+                    y_title += f" ({unit})"
                 
                 button = dict(
                     label=self._get_metric_display_name(metric_name),
@@ -2266,77 +2350,92 @@ class InteractivePlotter:
                     args=[
                         {"visible": visibility},
                         {
-                            "yaxis.title": self._get_metric_display_name(metric_name),
-                            "title": f'<b>HRV Time Series Analysis - {self._get_metric_display_name(metric_name)}</b><br>'
-                                    f'<span style="font-size:14px">Select any HRV metric to view trends across all subjects</span>'
+                            "yaxis.title": y_title,
+                            "title": f'<b>Crew HRV Statistical Analysis - {self._get_metric_display_name(metric_name)}</b><br>'
+                                    f'<span style="font-size:14px">Population statistics across mission timeline (N={stats["total_subjects"]} crew members)</span>'
                         }
                     ]
                 )
                 buttons.append(button)
         
         if not buttons:
-            logger.error("No dropdown buttons could be created - no metrics have plottable data")
-            raise ValueError("No metrics with valid time series data found for visualization")
+            logger.error("No dropdown buttons could be created - no metrics have statistical data")
+            raise ValueError("No metrics with valid statistical data found for visualization")
         
-        logger.info(f"Created {len(buttons)} dropdown options for metric selection")
+        logger.info(f"Created {len(buttons)} dropdown options for statistical metric analysis")
         
         # Calculate Sol range for X-axis formatting
         all_sols = []
-        for metric_data in all_metrics_data.values():
-            for subject_data in metric_data.values():
-                all_sols.extend([d['sol'] for d in subject_data])
+        for stats in statistical_data.values():
+            all_sols.extend(stats['sols'])
         
         sol_range = (min(all_sols), max(all_sols)) if all_sols else (0, 10)
         logger.info(f"X-axis Sol range: {sol_range[0]} to {sol_range[1]}")
         
-        # Update layout with professional styling and improved axes
+        # Get first metric info for initial display
+        first_stats = statistical_data[first_metric] if first_metric else None
+        first_unit = self._get_metric_unit(first_metric.split('_')[-1]) if first_metric and '_' in first_metric else ""
+        first_y_title = f"{self._get_metric_display_name(first_metric)}"
+        if first_unit:
+            first_y_title += f" ({first_unit})"
+        
+        # Professional scientific journal layout
         fig.update_layout(
             title=dict(
-                text=f'<b>HRV Time Series Analysis - Metric Explorer</b><br>'
-                     f'<span style="font-size:14px">Select any HRV metric to view trends across all subjects</span>',
+                text=f'<b>Crew HRV Statistical Analysis - {self._get_metric_display_name(first_metric) if first_metric else "HRV Metrics"}</b><br>'
+                     f'<span style="font-size:14px">Population statistics across mission timeline (N={first_stats["total_subjects"] if first_stats else "X"} crew members)</span>',
                 x=0.5,
-                font=dict(size=18, color='#2C3E50')
+                font=dict(size=18, color='#1a1a1a', family="Arial")
             ),
             xaxis=dict(
                 title='Mission Sol (Days)',
-                title_font=dict(size=14, color='#2C3E50'),
-                tickfont=dict(size=12),
+                title_font=dict(size=14, color='#1a1a1a', family="Arial"),
+                tickfont=dict(size=12, color='#1a1a1a', family="Arial"),
                 showgrid=True,
-                gridcolor='rgba(128,128,128,0.2)',
-                zeroline=False,
+                gridcolor='rgba(128,128,128,0.3)',
+                gridwidth=1,
+                zeroline=True,
+                zerolinecolor='rgba(128,128,128,0.5)',
+                zerolinewidth=1,
                 # Set explicit range to ensure proper display of Sol values
                 range=[sol_range[0] - 0.5, sol_range[1] + 0.5] if sol_range[1] > sol_range[0] else [0, 10],
                 tickmode='linear',
                 dtick=max(1, (sol_range[1] - sol_range[0]) / 10) if sol_range[1] > sol_range[0] else 1,
-                # Format as integers for Sol days
-                tickformat='.0f'
+                tickformat='.0f',
+                linecolor='#1a1a1a',
+                linewidth=1,
+                mirror=True
             ),
             yaxis=dict(
-                title=self._get_metric_display_name(first_metric) if first_metric else "HRV Metric",
-                title_font=dict(size=14, color='#2C3E50'),
-                tickfont=dict(size=12),
+                title=first_y_title,
+                title_font=dict(size=14, color='#1a1a1a', family="Arial"),
+                tickfont=dict(size=12, color='#1a1a1a', family="Arial"),
                 showgrid=True,
-                gridcolor='rgba(128,128,128,0.2)',
-                zeroline=False
+                gridcolor='rgba(128,128,128,0.3)',
+                gridwidth=1,
+                zeroline=False,
+                linecolor='#1a1a1a',
+                linewidth=1,
+                mirror=True
             ),
             plot_bgcolor='white',
             paper_bgcolor='white',
             showlegend=True,
             legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="center",
-                x=0.5,
-                font=dict(size=11),
-                bgcolor="rgba(255,255,255,0.8)",
-                bordercolor="rgba(128,128,128,0.2)",
+                orientation="v",
+                yanchor="top",
+                y=0.95,
+                xanchor="right",
+                x=0.98,
+                font=dict(size=11, color='#1a1a1a', family="Arial"),
+                bgcolor="rgba(255,255,255,0.9)",
+                bordercolor="#cccccc",
                 borderwidth=1
             ),
             width=1200,
             height=700,
-            margin=dict(l=80, r=80, t=120, b=80),
-            font=dict(family="Arial, sans-serif", size=12, color="#2C3E50"),
+            margin=dict(l=100, r=120, t=120, b=80),
+            font=dict(family="Arial, sans-serif", size=12, color="#1a1a1a"),
             updatemenus=[{
                 'buttons': buttons,
                 'direction': 'down',
@@ -2344,32 +2443,32 @@ class InteractivePlotter:
                 'showactive': True,
                 'x': 0.02,
                 'xanchor': 'left',
-                'y': 1.05,
+                'y': 1.08,
                 'yanchor': 'top',
-                'bgcolor': '#F8F9FA',
-                'bordercolor': '#DEE2E6',
+                'bgcolor': '#f8f9fa',
+                'bordercolor': '#dee2e6',
                 'borderwidth': 1,
-                'font': dict(size=12)
+                'font': dict(size=12, color='#1a1a1a', family="Arial")
             }],
             annotations=[
                 dict(
                     text="<b>Select HRV Metric:</b>",
                     x=0.02,
-                    y=1.08,
+                    y=1.12,
                     xref="paper",
                     yref="paper",
                     showarrow=False,
-                    font=dict(size=13, color='#2C3E50'),
+                    font=dict(size=13, color='#1a1a1a', family="Arial"),
                     xanchor="left"
                 ),
                 dict(
-                    text="💡 Tip: Click on legend items to show/hide individual subjects",
+                    text="📊 Statistical visualization: Median ± IQR ± 95% CI with trend analysis",
                     x=0.98,
-                    y=1.08,
+                    y=1.12,
                     xref="paper",
                     yref="paper",
                     showarrow=False,
-                    font=dict(size=11, color='#6C757D'),
+                    font=dict(size=11, color='#6c757d', family="Arial"),
                     xanchor="right"
                 )
             ]
@@ -2377,21 +2476,36 @@ class InteractivePlotter:
         
         return fig
     
-    def _prepare_all_metrics_data(self, analysis_results: Dict[str, Any], 
-                                 available_metrics_by_domain: Dict[str, List[str]]) -> Dict[str, Dict]:
-        """Prepare comprehensive metrics data for display with simplified structure."""
-        all_metrics = {}
+    def _prepare_statistical_metrics_data(self, analysis_results: Dict[str, Any], 
+                                         available_metrics_by_domain: Dict[str, List[str]]) -> Dict[str, Dict]:
+        """
+        Prepare statistical metrics data for publication-quality visualization.
         
-        logger.debug(f"Available metrics by domain: {available_metrics_by_domain}")
+        Calculates crew-wide statistics for each Sol day:
+        - Median values
+        - Interquartile range (Q1, Q3)
+        - 95% Confidence intervals
+        - Sample sizes
         
-        # First, collect all possible metrics from the analysis results
+        Returns:
+            Dict with statistical data for each metric organized by Sol
+        """
+        from scipy import stats
+        import numpy as np
+        
+        logger.debug(f"Calculating statistical aggregation for metrics by domain: {available_metrics_by_domain}")
+        
+        # First, collect all raw data organized by metric and Sol
+        raw_metrics_by_sol = {}
+        all_subjects = set()
+        
         for subject_session, results in analysis_results.items():
             if not isinstance(results, dict) or 'hrv_results' not in results:
                 continue
                 
             hrv_results = results['hrv_results']
             
-            # FIXED: Properly extract Sol number from key name like other methods do
+            # Extract Sol number and subject name
             if '_Sol' in subject_session:
                 try:
                     subject_name, sol_str = subject_session.rsplit('_Sol', 1)
@@ -2400,13 +2514,12 @@ class InteractivePlotter:
                     logger.warning(f"Could not parse Sol number from {subject_session}, skipping")
                     continue
             else:
-                # Fallback to sol_number from results, but warn if it seems wrong
                 sol_number = results.get('sol_number', 0)
                 subject_name = subject_session.split('_')[0] if '_' in subject_session else subject_session
-                logger.debug(f"No Sol in key name for {subject_session}, using sol_number={sol_number}")
+                
+            all_subjects.add(subject_name)
             
             logger.debug(f"Processing {subject_session}: sol={sol_number}, subject={subject_name}")
-            logger.debug(f"HRV results domains: {list(hrv_results.keys())}")
             
             # Extract metrics from all domains
             for domain_name, domain_metrics in available_metrics_by_domain.items():
@@ -2414,12 +2527,11 @@ class InteractivePlotter:
                 
                 if domain_key in hrv_results and isinstance(hrv_results[domain_key], dict):
                     domain_data = hrv_results[domain_key]
-                    logger.debug(f"Domain {domain_key} has keys: {list(domain_data.keys())}")
                     
                     for full_metric_name in domain_metrics:
-                        # Extract the metric key from the full name (e.g., "time_domain_sdnn" -> "sdnn")
+                        # Extract the metric key from the full name
                         if full_metric_name.startswith(f"{domain_key}_"):
-                            metric_key = full_metric_name[len(domain_key) + 1:]  # Remove "domain_" prefix
+                            metric_key = full_metric_name[len(domain_key) + 1:]
                         else:
                             metric_key = full_metric_name
                         
@@ -2427,58 +2539,117 @@ class InteractivePlotter:
                         possible_keys = [metric_key, metric_key.lower(), metric_key.replace(' ', '_').lower()]
                         
                         metric_value = None
-                        found_key = None
                         for key in possible_keys:
                             if key in domain_data:
                                 try:
                                     value = float(domain_data[key])
                                     if not np.isnan(value):
                                         metric_value = value
-                                        found_key = key
                                         break
                                 except (ValueError, TypeError):
                                     continue
                         
                         if metric_value is not None:
-                            logger.debug(f"Found {full_metric_name}: {found_key}={metric_value}")
+                            # Initialize metric structure if needed
+                            if full_metric_name not in raw_metrics_by_sol:
+                                raw_metrics_by_sol[full_metric_name] = {}
                             
-                            if full_metric_name not in all_metrics:
-                                all_metrics[full_metric_name] = {}
+                            if sol_number not in raw_metrics_by_sol[full_metric_name]:
+                                raw_metrics_by_sol[full_metric_name][sol_number] = []
                             
-                            if subject_name not in all_metrics[full_metric_name]:
-                                all_metrics[full_metric_name][subject_name] = []
-                            
-                            all_metrics[full_metric_name][subject_name].append({
-                                'value': metric_value,
-                                'sol': sol_number,  # Now using the properly extracted Sol number
-                                'subject': subject_name,
-                                'session': subject_session,
-                                'domain': domain_name,
-                                'unit': self._get_metric_unit(metric_key)
-                            })
+                            raw_metrics_by_sol[full_metric_name][sol_number].append(metric_value)
         
-        # Sort each subject's data by Sol number
-        for metric_name in all_metrics:
-            for subject_name in all_metrics[metric_name]:
-                all_metrics[metric_name][subject_name].sort(key=lambda x: x['sol'])
+        logger.info(f"Collected raw data for {len(raw_metrics_by_sol)} metrics across {len(all_subjects)} subjects")
         
-        # Log Sol ranges for debugging
-        if all_metrics:
-            sample_metric = list(all_metrics.keys())[0]
-            all_sols = []
-            for subject_data in all_metrics[sample_metric].values():
-                all_sols.extend([d['sol'] for d in subject_data])
-            if all_sols:
-                logger.info(f"Sol values range from {min(all_sols)} to {max(all_sols)}")
+        # Calculate statistics for each metric
+        statistical_data = {}
         
-        logger.info(f"Prepared metrics data for {len(all_metrics)} metrics across {len(set(subject for metric_data in all_metrics.values() for subject in metric_data.keys()))} subjects")
+        for metric_name, sol_data in raw_metrics_by_sol.items():
+            if not sol_data:
+                continue
+                
+            # Get sorted list of Sol days
+            sols = sorted(sol_data.keys())
+            
+            medians = []
+            q1s = []
+            q3s = []
+            ci_lowers = []
+            ci_uppers = []
+            n_subjects_list = []
+            
+            for sol in sols:
+                values = np.array(sol_data[sol])
+                n = len(values)
+                
+                if n == 0:
+                    continue
+                    
+                # Calculate basic statistics
+                median_val = np.median(values)
+                q1_val = np.percentile(values, 25)
+                q3_val = np.percentile(values, 75)
+                
+                # Calculate 95% confidence interval for the median
+                if n >= 3:  # Need at least 3 points for meaningful CI
+                    try:
+                        # Bootstrap confidence interval for median
+                        bootstrap_medians = []
+                        n_bootstrap = min(1000, max(100, n * 10))  # Adaptive bootstrap samples
+                        
+                        np.random.seed(42)  # For reproducibility
+                        for _ in range(n_bootstrap):
+                            bootstrap_sample = np.random.choice(values, size=n, replace=True)
+                            bootstrap_medians.append(np.median(bootstrap_sample))
+                        
+                        bootstrap_medians = np.array(bootstrap_medians)
+                        ci_lower = np.percentile(bootstrap_medians, 2.5)
+                        ci_upper = np.percentile(bootstrap_medians, 97.5)
+                        
+                    except Exception as e:
+                        logger.warning(f"Bootstrap CI calculation failed for {metric_name} Sol {sol}: {e}")
+                        # Fallback: use standard error approximation
+                        se = stats.sem(values)
+                        ci_lower = median_val - 1.96 * se
+                        ci_upper = median_val + 1.96 * se
+                else:
+                    # For small samples, use wider intervals based on data range
+                    data_range = np.ptp(values) if n > 1 else 0
+                    ci_lower = median_val - data_range * 0.5
+                    ci_upper = median_val + data_range * 0.5
+                
+                medians.append(median_val)
+                q1s.append(q1_val)
+                q3s.append(q3_val)
+                ci_lowers.append(ci_lower)
+                ci_uppers.append(ci_upper)
+                n_subjects_list.append(n)
+            
+            if medians:  # Only include metrics with valid data
+                statistical_data[metric_name] = {
+                    'sols': sols,
+                    'median': medians,
+                    'q1': q1s,
+                    'q3': q3s,
+                    'ci_lower': ci_lowers,
+                    'ci_upper': ci_uppers,
+                    'n_subjects': n_subjects_list,
+                    'total_subjects': len(all_subjects)
+                }
+                
+                logger.debug(f"Calculated statistics for {metric_name}: {len(sols)} Sol days, "
+                           f"median range {min(medians):.2f}-{max(medians):.2f}")
         
-        # Log sample of extracted metrics for debugging
-        if all_metrics:
-            sample_metric = list(all_metrics.keys())[0]
-            logger.debug(f"Sample metric '{sample_metric}' has data for subjects: {list(all_metrics[sample_metric].keys())}")
+        logger.info(f"Successfully calculated statistical data for {len(statistical_data)} metrics")
         
-        return all_metrics
+        # Log summary statistics
+        if statistical_data:
+            sample_metric = list(statistical_data.keys())[0]
+            sample_stats = statistical_data[sample_metric]
+            logger.info(f"Sample metric '{sample_metric}': {len(sample_stats['sols'])} Sol days, "
+                       f"N={sample_stats['total_subjects']} subjects")
+        
+        return statistical_data
     
     def _get_metric_display_name(self, metric_name: str) -> str:
         """Convert metric name to display-friendly format."""
