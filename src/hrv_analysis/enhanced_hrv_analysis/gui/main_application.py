@@ -595,6 +595,11 @@ class HRVAnalysisApp:
                   command=self._generate_mission_phases_report,
                   style='Success.TButton').grid(row=3, column=2, padx=5, pady=5, sticky="ew")
         
+        # Row 4 - Interactive Plotly Boxplots (New Feature)
+        ttk.Button(buttons_frame, text="Interactive Plotly Boxplots", 
+                  command=self._generate_plotly_boxplots,
+                  style='Info.TButton').grid(row=4, column=0, columnspan=2, padx=5, pady=5, sticky="ew")
+        
         # Description labels
         gam_desc_label = ttk.Label(main_frame,
                                   text="GAM Analysis: Advanced statistical modeling with trend lines and confidence intervals for crew-wide analysis",
@@ -608,6 +613,13 @@ class HRVAnalysisApp:
                                      font=('Helvetica', 9),
                                      foreground='#2D5A27')
         phases_desc_label.pack(pady=(2, 0))
+        
+        # Interactive Plotly description
+        plotly_desc_label = ttk.Label(main_frame,
+                                     text="Interactive Plotly: Individual plots per metric with browser-based interactivity and proper reference ranges",
+                                     font=('Helvetica', 9),
+                                     foreground='#1B4F72')
+        plotly_desc_label.pack(pady=(2, 0))
         
         # Status display
         self.plot_status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
@@ -794,7 +806,9 @@ class HRVAnalysisApp:
     def _check_pending_notifications(self):
         """Check for and display pending notifications from background processing."""
         try:
-            if hasattr(self, 'async_processor'):
+            if (hasattr(self, 'async_processor') and 
+                self.async_processor is not None and 
+                hasattr(self.async_processor, 'get_pending_notifications')):
                 notifications = self.async_processor.get_pending_notifications()
                 
                 for notification in notifications:
@@ -838,7 +852,9 @@ class HRVAnalysisApp:
     def _refresh_analysis_results(self):
         """Refresh analysis results from persisted data."""
         try:
-            if hasattr(self, 'async_processor'):
+            if (hasattr(self, 'async_processor') and 
+                self.async_processor is not None and
+                hasattr(self.async_processor, 'get_persisted_tasks')):
                 persisted_tasks = self.async_processor.get_persisted_tasks()
                 
                 if persisted_tasks:
@@ -3734,6 +3750,72 @@ Special Thanks:
                 "Error",
                 f"Could not open HRV citations: {e}"
             )
+
+    def _generate_plotly_boxplots(self):
+        """Generate interactive Plotly boxplots for mission phases analysis."""
+        try:
+            if not self.analysis_results:
+                messagebox.showwarning("Warning", "Please run an analysis first to generate interactive boxplots.")
+                return
+            
+            if not self.mission_phases_generator:
+                messagebox.showerror("Error", "Mission phases boxplot generator is not available.")
+                return
+            
+            self.plot_status_label.configure(text="Generating interactive Plotly boxplots (one plot per metric)...")
+            self.root.update_idletasks()
+            
+            # Generate all Plotly boxplots
+            results = self.mission_phases_generator.generate_all_plotly_boxplots(self.analysis_results)
+            
+            individual_plots = results.get('individual_plots', [])
+            report_path = results.get('report', '')
+            mission_phases = results.get('mission_phases', {})
+            
+            success_text = f"✅ Interactive Plotly boxplots generated!\n"
+            success_text += f"Created {len(individual_plots)} individual metric plots\n"
+            success_text += f"All plots saved to plots_output/ folder\n"
+            success_text += f"Report: {Path(report_path).name if report_path else 'N/A'}"
+            self.plot_status_label.configure(text=success_text)
+            
+            # Show completion message with plot details
+            plot_names = [Path(p).stem.replace('mission_phases_', '').replace('_boxplot', '').replace('_', ' ').title() 
+                         for p in individual_plots]
+            
+            completion_message = (
+                "🎉 Interactive Plotly Boxplots Generated!\n\n"
+                f"✅ Created {len(individual_plots)} individual metric plots:\n"
+                + "\n".join([f"• {name}" for name in plot_names[:10]])  # Show first 10
+                + (f"\n• ... and {len(plot_names)-10} more" if len(plot_names) > 10 else "") + "\n\n"
+                "Features:\n"
+                "• Interactive hover information\n"
+                "• Normal reference ranges (green bands)\n"
+                "• Statistical significance testing\n"
+                "• Zoom, pan, and export capabilities\n"
+                "• Professional aerospace medicine styling\n\n"
+                f"Mission Phases: Early (Sol {mission_phases.get('Early', (0,0))[0]:.1f}-"
+                f"{mission_phases.get('Early', (0,0))[1]:.1f}), "
+                f"Mid (Sol {mission_phases.get('Mid', (0,0))[0]:.1f}-"
+                f"{mission_phases.get('Mid', (0,0))[1]:.1f}), "
+                f"Late (Sol {mission_phases.get('Late', (0,0))[0]:.1f}-"
+                f"{mission_phases.get('Late', (0,0))[1]:.1f})\n\n"
+                "All files saved to plots_output/ folder and will open in your browser."
+            )
+            
+            messagebox.showinfo("Plotly Boxplots Complete", completion_message)
+            
+            # Open the first few plot files to demonstrate
+            for i, plot_path in enumerate(individual_plots[:3]):  # Open first 3 plots
+                self._open_plot_file(Path(plot_path))
+                
+            # Also open the report
+            if report_path:
+                self._open_plot_file(Path(report_path))
+            
+        except Exception as e:
+            logger.error(f"Error generating Plotly boxplots: {e}")
+            self.plot_status_label.configure(text=f"❌ Error: {e}")
+            messagebox.showerror("Error", f"Failed to generate interactive Plotly boxplots: {e}")
 
 
 def main():

@@ -14,6 +14,9 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 from scipy import stats
@@ -598,3 +601,422 @@ class MissionPhasesBoxplotGenerator:
                 framealpha=0.9
             )
             legend.set_zorder(10) 
+
+    def generate_individual_plotly_boxplots(self, df: pd.DataFrame, mission_phases: Dict[str, Tuple[float, float]], 
+                                           output_dir: str = "plots_output") -> List[str]:
+        """
+        Generate individual Plotly boxplots for each HRV metric across mission phases.
+        Each metric gets its own interactive plot with proper normal range coverage.
+        
+        Args:
+            df: Prepared mission data
+            mission_phases: Mission phases definition
+            output_dir: Output directory for plots
+            
+        Returns:
+            List of paths to saved plot files
+        """
+        logger.info("Generating individual Plotly boxplots for each HRV metric")
+        
+        # Create output directory
+        Path(output_dir).mkdir(exist_ok=True)
+        
+        # Select key HRV metrics for plotting
+        hrv_metrics = ['SDNN', 'RMSSD', 'pNN50', 'Mean_HR', 'LF_HF_Ratio', 'HF_Power', 'LF_Power']
+        available_metrics = [m for m in hrv_metrics if m in df.columns and df[m].notna().sum() > 0]
+        
+        if not available_metrics:
+            raise ValueError("No suitable HRV metrics found for individual boxplots")
+        
+        plot_paths = []
+        
+        # Phase colors matching the original scheme
+        phase_colors = {
+            'Early': '#87CEEB',   # Sky blue
+            'Mid': '#90EE90',     # Light green  
+            'Late': '#F08080'     # Light coral
+        }
+        
+        for metric in available_metrics:
+            logger.info(f"Creating individual Plotly boxplot for {metric}")
+            
+            # Create individual figure for this metric
+            fig = go.Figure()
+            
+            # Prepare data by phase
+            phase_data = {}
+            phase_labels = ['Early', 'Mid', 'Late']
+            
+            for phase in phase_labels:
+                phase_values = df[df['Mission_Phase'] == phase][metric].dropna()
+                if len(phase_values) > 0:
+                    phase_data[phase] = phase_values.values
+            
+            if not phase_data:
+                logger.warning(f"No data available for metric {metric}")
+                continue
+            
+            # Add normal range background first (so it appears behind boxplots)
+            self._add_plotly_reference_ranges(fig, metric)
+            
+            # Add boxplots for each phase
+            for i, (phase, values) in enumerate(phase_data.items()):
+                fig.add_trace(go.Box(
+                    y=values,
+                    name=phase,
+                    x=[phase] * len(values),  # Position on x-axis
+                    boxpoints='outliers',
+                    marker_color=phase_colors[phase],
+                    marker_line_color='rgb(8,48,107)',
+                    marker_line_width=1.5,
+                    marker_size=4,
+                    line_color='rgb(8,48,107)',
+                    fillcolor=phase_colors[phase],
+                    opacity=0.7,
+                    hovertemplate=(
+                        f'<b>{phase} Phase</b><br>'
+                        f'{metric}: %{{y:.2f}}<br>'
+                        f'<extra></extra>'
+                    )
+                ))
+            
+            # Add statistical test results
+            if len(phase_data) >= 2:
+                self._add_statistical_annotations_plotly(fig, phase_data, metric)
+            
+            # Format metric title
+            clean_metric = self._format_metric_title(metric)
+            
+            # Update layout
+            fig.update_layout(
+                title=dict(
+                    text=f'<b>{clean_metric} by Mission Phase</b><br>'
+                         f'<span style="font-size:12px">Valquiria Space Analog Mission - Crew Analysis</span>',
+                    x=0.5,
+                    font=dict(size=16, color='#2C3E50')
+                ),
+                xaxis=dict(
+                    title='Mission Phase',
+                    title_font=dict(size=14, color='#2C3E50'),
+                    tickfont=dict(size=12, color='#2C3E50'),
+                    showgrid=True,
+                    gridcolor='rgba(128,128,128,0.2)',
+                    zeroline=False
+                ),
+                yaxis=dict(
+                    title=clean_metric,
+                    title_font=dict(size=14, color='#2C3E50'),
+                    tickfont=dict(size=12, color='#2C3E50'),
+                    showgrid=True,
+                    gridcolor='rgba(128,128,128,0.2)',
+                    zeroline=False
+                ),
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                showlegend=True,
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="center",
+                    x=0.5,
+                    font=dict(size=11)
+                ),
+                width=800,
+                height=600,
+                margin=dict(l=80, r=80, t=100, b=80),
+                font=dict(family="Arial, sans-serif", size=11, color="#2C3E50")
+            )
+            
+            # Save plot
+            safe_metric = metric.replace('/', '_').replace(' ', '_').lower()
+            plot_filename = f"mission_phases_{safe_metric}_boxplot.html"
+            plot_path = Path(output_dir) / plot_filename
+            
+            fig.write_html(
+                str(plot_path),
+                include_plotlyjs='cdn',
+                div_id=f"boxplot_{safe_metric}",
+                config={
+                    'displayModeBar': True,
+                    'displaylogo': False,
+                    'modeBarButtonsToRemove': ['pan2d', 'lasso2d', 'select2d'],
+                    'responsive': True
+                }
+            )
+            
+            plot_paths.append(str(plot_path))
+            logger.info(f"Individual Plotly boxplot for {metric} saved to: {plot_path}")
+        
+        return plot_paths
+
+    def _add_plotly_reference_ranges(self, fig: go.Figure, metric: str) -> None:
+        """
+        Add reference ranges to Plotly boxplot with proper x-axis coverage.
+        
+        Args:
+            fig: Plotly figure object
+            metric: Metric name to look up reference ranges
+        """
+        if not hrv_reference_ranges or not get_reference_range:
+            return
+        
+        # Map metric names to standard keys
+        metric_map = {
+            'SDNN': 'sdnn',
+            'RMSSD': 'rmssd',
+            'pNN50': 'pnn50',
+            'Mean_HR': None,  # No direct reference range
+            'HF_Power': 'hf_power',
+            'LF_Power': 'lf_power',
+            'LF_HF_Ratio': 'lf_hf_ratio',
+            'VLF_Power': 'vlf_power'
+        }
+        
+        metric_key = metric_map.get(metric)
+        if not metric_key:
+            return
+        
+        ref_range = get_reference_range(metric_key)
+        if not ref_range:
+            return
+        
+        # Add normal range band (25th-75th percentile) covering full x-axis width
+        if ref_range.percentile_25 and ref_range.percentile_75:
+            fig.add_shape(
+                type="rect",
+                x0=-0.5,  # Start before first phase
+                x1=2.5,   # End after last phase (covers all 3 phases: 0, 1, 2)
+                y0=ref_range.percentile_25,
+                y1=ref_range.percentile_75,
+                fillcolor='rgba(34, 139, 34, 0.15)',  # Light green
+                line=dict(width=0),
+                layer='below'  # Ensure it appears behind boxplots
+            )
+            
+            # Add legend entry for normal range
+            fig.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode='markers',
+                marker=dict(
+                    size=12,
+                    color='rgba(34, 139, 34, 0.4)',
+                    symbol='square'
+                ),
+                name='Normal Range (25th-75th %ile)',
+                showlegend=True,
+                hoverinfo='skip'
+            ))
+        
+        # Add median reference line covering full width
+        if ref_range.percentile_50:
+            fig.add_shape(
+                type="line",
+                x0=-0.5,
+                x1=2.5,
+                y0=ref_range.percentile_50,
+                y1=ref_range.percentile_50,
+                line=dict(
+                    color='green',
+                    dash='dash',
+                    width=2
+                ),
+                layer='below'
+            )
+            
+            # Add legend entry for median
+            fig.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode='lines',
+                line=dict(color='green', dash='dash', width=2),
+                name='Reference Median',
+                showlegend=True,
+                hoverinfo='skip'
+            ))
+        
+        # Add citation annotation
+        citation_info = hrv_reference_ranges.get_citation_info(metric_key)
+        if citation_info:
+            citation_text = f"Reference: {citation_info['population'][:40]}..."
+            fig.add_annotation(
+                x=0.02,
+                y=0.98,
+                xref="paper",
+                yref="paper",
+                text=citation_text,
+                showarrow=False,
+                font=dict(size=9, color='gray'),
+                bgcolor="rgba(255,255,255,0.8)",
+                bordercolor="gray",
+                borderwidth=1,
+                xanchor="left",
+                yanchor="top"
+            )
+
+    def _add_statistical_annotations_plotly(self, fig: go.Figure, phase_data: Dict[str, np.ndarray], metric: str) -> None:
+        """Add statistical test annotations to Plotly figure."""
+        try:
+            # Perform Kruskal-Wallis test
+            valid_data = [data for data in phase_data.values() if len(data) > 1]
+            if len(valid_data) >= 2:
+                h_stat, p_value = stats.kruskal(*valid_data)
+                
+                # Format p-value
+                if p_value < 0.001:
+                    p_text = "p < 0.001***"
+                    color = "red"
+                elif p_value < 0.01:
+                    p_text = "p < 0.01**"
+                    color = "orange"
+                elif p_value < 0.05:
+                    p_text = "p < 0.05*"
+                    color = "blue"
+                else:
+                    p_text = f"p = {p_value:.3f}"
+                    color = "gray"
+                
+                # Add statistical annotation
+                fig.add_annotation(
+                    x=0.98,
+                    y=0.98,
+                    xref="paper",
+                    yref="paper",
+                    text=f"Kruskal-Wallis Test<br>{p_text}",
+                    showarrow=False,
+                    font=dict(size=11, color=color),
+                    bgcolor="rgba(255,255,255,0.9)",
+                    bordercolor=color,
+                    borderwidth=1,
+                    xanchor="right",
+                    yanchor="top"
+                )
+        except Exception as e:
+            logger.warning(f"Statistical annotation failed for {metric}: {e}")
+
+    def _format_metric_title(self, metric: str) -> str:
+        """Format metric names for display."""
+        title_mapping = {
+            'SDNN': 'SDNN (Standard Deviation of RR Intervals)',
+            'RMSSD': 'RMSSD (Root Mean Square of Successive Differences)', 
+            'pNN50': 'pNN50 (% of RR intervals differing >50ms)',
+            'Mean_HR': 'Mean Heart Rate (BPM)',
+            'HF_Power': 'HF Power (High Frequency Spectral Power)',
+            'LF_Power': 'LF Power (Low Frequency Spectral Power)',
+            'LF_HF_Ratio': 'LF/HF Ratio (Sympathovagal Balance)',
+            'VLF_Power': 'VLF Power (Very Low Frequency Spectral Power)'
+        }
+        
+        return title_mapping.get(metric, metric.replace('_', ' ').title())
+
+    def generate_all_plotly_boxplots(self, analysis_results: Dict[str, Any], output_dir: str = "plots_output") -> Dict[str, List[str]]:
+        """
+        Generate all Plotly boxplots (individual plots for each metric).
+        
+        Args:
+            analysis_results: Results from HRV analysis
+            output_dir: Output directory for plots
+            
+        Returns:
+            Dictionary with plot paths organized by type
+        """
+        try:
+            # Prepare mission data
+            df, mission_phases = self.prepare_mission_data(analysis_results)
+            
+            # Generate individual Plotly boxplots
+            individual_paths = self.generate_individual_plotly_boxplots(df, mission_phases, output_dir)
+            
+            # Generate summary report
+            report_path = self.generate_plotly_boxplot_report(df, mission_phases, individual_paths, output_dir)
+            
+            return {
+                'individual_plots': individual_paths,
+                'report': report_path,
+                'mission_phases': mission_phases
+            }
+            
+        except Exception as e:
+            logger.error(f"Error generating Plotly boxplots: {e}")
+            raise
+
+    def generate_plotly_boxplot_report(self, df: pd.DataFrame, mission_phases: Dict[str, Tuple[float, float]], 
+                                     plot_paths: List[str], output_dir: str = "plots_output") -> str:
+        """Generate comprehensive report for Plotly boxplot analysis."""
+        logger.info("Generating Plotly boxplot analysis report")
+        
+        Path(output_dir).mkdir(exist_ok=True)
+        report_path = Path(output_dir) / "mission_phases_plotly_boxplot_report.txt"
+        
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write("VALQUIRIA MISSION PHASES - INTERACTIVE BOXPLOT ANALYSIS\n")
+            f.write("ENHANCED HRV ANALYSIS WITH PLOTLY VISUALIZATIONS\n")
+            f.write("=" * 60 + "\n\n")
+            
+            f.write(f"Analysis Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Visualization: Interactive Plotly Boxplots\n")
+            f.write(f"Mission: Valquiria Space Analog Simulation\n\n")
+            
+            # Mission phases
+            f.write("MISSION PHASE DEFINITIONS:\n")
+            f.write("-" * 30 + "\n")
+            for phase, (start, end) in mission_phases.items():
+                f.write(f"{phase} Phase: Sol {start:.1f} - {end:.1f}\n")
+            f.write("\n")
+            
+            # Dataset summary
+            f.write("DATASET SUMMARY:\n")
+            f.write("-" * 18 + "\n")
+            f.write(f"Total subject-session combinations: {len(df)}\n")
+            f.write(f"Unique subjects: {df['Subject'].nunique()}\n")
+            
+            if 'Mission_Phase' in df.columns:
+                phase_counts = df['Mission_Phase'].value_counts()
+                f.write(f"\nPhase distribution:\n")
+                for phase in ['Early', 'Mid', 'Late']:
+                    count = phase_counts.get(phase, 0)
+                    pct = (count / len(df)) * 100
+                    f.write(f"  {phase}: {count} combinations ({pct:.1f}%)\n")
+            
+            # Generated plots
+            f.write(f"\nGENERATED INTERACTIVE PLOTS:\n")
+            f.write("-" * 32 + "\n")
+            for i, plot_path in enumerate(plot_paths, 1):
+                plot_name = Path(plot_path).stem
+                metric_name = plot_name.replace('mission_phases_', '').replace('_boxplot', '').replace('_', ' ').title()
+                f.write(f"{i:2}. {metric_name} - {Path(plot_path).name}\n")
+            f.write("\n")
+            
+            # Analysis features
+            f.write("INTERACTIVE FEATURES:\n")
+            f.write("-" * 22 + "\n")
+            f.write("• Individual plots for each HRV metric\n")
+            f.write("• Interactive hover information with detailed values\n")
+            f.write("• Normal reference ranges (25th-75th percentiles) displayed as background bands\n")
+            f.write("• Reference median lines for clinical interpretation\n")
+            f.write("• Statistical significance testing (Kruskal-Wallis) with p-values\n")
+            f.write("• Professional aerospace medicine styling\n")
+            f.write("• Zoom, pan, and export capabilities\n")
+            f.write("• Browser-based viewing with responsive design\n\n")
+            
+            # Usage instructions
+            f.write("USAGE INSTRUCTIONS:\n")
+            f.write("-" * 20 + "\n")
+            f.write("1. Open any .html file in your web browser\n")
+            f.write("2. Use mouse to hover over data points for detailed information\n")
+            f.write("3. Use toolbar to zoom, pan, or export plots\n")
+            f.write("4. Green background bands show normal physiological ranges\n")
+            f.write("5. Dashed green lines show reference median values\n")
+            f.write("6. Statistical test results appear in top-right corner\n\n")
+            
+            f.write("CLINICAL INTERPRETATION:\n")
+            f.write("-" * 25 + "\n")
+            f.write("• Values within green bands are in normal physiological range\n")
+            f.write("• Significant p-values (p < 0.05) indicate phase-dependent changes\n")
+            f.write("• Individual subject patterns can be assessed for adaptation responses\n")
+            f.write("• Outliers may indicate individual stress responses or measurement artifacts\n\n")
+            
+            f.write("INTEGRATION SUCCESS: Interactive Plotly boxplots successfully generated\n")
+            f.write("for comprehensive mission phase analysis with clinical reference ranges.\n")
+        
+        logger.info(f"Plotly boxplot report generated: {report_path}")
+        return str(report_path) 

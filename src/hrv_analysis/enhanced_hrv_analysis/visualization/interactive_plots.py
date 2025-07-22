@@ -700,6 +700,9 @@ class InteractivePlotter:
                             row=row, col=col
                         )
                         
+                        # Add normal reference ranges as background bands
+                        self._add_reference_bands_to_gam_plot(fig, metric, row, col, idx == 0)
+                        
                         # Add GAM trend line
                         fig.add_trace(
                             go.Scatter(
@@ -1725,8 +1728,128 @@ class InteractivePlotter:
                 row=row, col=col
             )
         
-
+    def _add_reference_bands_to_gam_plot(self, fig, metric: str, row: int, col: int, 
+                                       show_legend: bool) -> None:
+        """
+        Add reference range bands to GAM plots for clinical interpretation.
+        
+        Args:
+            fig: Plotly figure object
+            metric: Full metric name (e.g., 'time_domain_sdnn')
+            row: Subplot row
+            col: Subplot column  
+            show_legend: Whether to show legend entries for this subplot
+        """
+        if not hrv_reference_ranges:
+            return
+        
+        # Extract metric key from full metric name
+        metric_key = self._extract_metric_key_for_reference(metric)
+        if not metric_key:
+            return
+            
+        ref_range = hrv_reference_ranges.get_range(metric_key)
+        if not ref_range:
+            return
+        
+        # Add normal range band (25th-75th percentile) - the most clinically relevant
+        if ref_range.percentile_25 and ref_range.percentile_75:
+            fig.add_shape(
+                type="rect",
+                x0=0, x1=1,  # Full width in paper coordinates
+                y0=ref_range.percentile_25, 
+                y1=ref_range.percentile_75,
+                fillcolor="rgba(34, 139, 34, 0.15)",  # Light green
+                line=dict(width=0),
+                row=row, col=col,
+                xref="paper", yref="y"
+            )
+            
+            # Add legend entry for normal range (only on first subplot)
+            if show_legend:
+                fig.add_trace(
+                    go.Scatter(
+                        x=[None], y=[None],
+                        mode='markers',
+                        marker=dict(size=10, color='rgba(34, 139, 34, 0.6)', symbol='square'),
+                        name='Normal Range (25th-75th %ile)',
+                        showlegend=True,
+                        hoverinfo='skip'
+                    ),
+                    row=row, col=col
+                )
+        
+        # Add median reference line
+        if ref_range.percentile_50:
+            fig.add_hline(
+                y=ref_range.percentile_50,
+                line_dash="dash",
+                line_color="green",
+                line_width=2,
+                opacity=0.8,
+                row=row, col=col
+            )
+            
+            # Add legend entry for median (only on first subplot)
+            if show_legend:
+                fig.add_trace(
+                    go.Scatter(
+                        x=[None], y=[None],
+                        mode='lines',
+                        line=dict(color='green', dash='dash', width=2),
+                        name='Reference Median',
+                        showlegend=True,
+                        hoverinfo='skip'
+                    ),
+                    row=row, col=col
+                )
+        
+        # Add extreme risk thresholds if available
+        risk_thresholds = hrv_reference_ranges.get_high_risk_threshold(metric_key)
+        if risk_thresholds and show_legend:
+            # Add very low threshold
+            if 'very_low' in risk_thresholds:
+                fig.add_hline(
+                    y=risk_thresholds['very_low'],
+                    line_dash="dot",
+                    line_color="red",
+                    line_width=1,
+                    opacity=0.6,
+                    row=row, col=col
+                )
+                
+                fig.add_trace(
+                    go.Scatter(
+                        x=[None], y=[None],
+                        mode='lines',
+                        line=dict(color='red', dash='dot', width=1),
+                        name='High Risk Threshold',
+                        showlegend=True,
+                        hoverinfo='skip'
+                    ),
+                    row=row, col=col
+                )
     
+    def _extract_metric_key_for_reference(self, full_metric_name: str) -> Optional[str]:
+        """Extract the metric key for reference range lookup."""
+        # Mapping from full metric names to reference range keys
+        metric_mapping = {
+            'time_domain_sdnn': 'sdnn',
+            'time_domain_rmssd': 'rmssd', 
+            'time_domain_pnn50': 'pnn50',
+            'frequency_domain_hf_power': 'hf_power',
+            'frequency_domain_lf_power': 'lf_power',
+            'frequency_domain_vlf_power': 'vlf_power',
+            'frequency_domain_lf_hf_ratio': 'lf_hf_ratio',
+            'frequency_domain_total_power': 'total_power',
+            'nonlinear_sd1': 'sd1',
+            'nonlinear_sd2': 'sd2',
+            'nonlinear_dfa_alpha1': 'dfa_alpha1',
+            'sympathetic_stress_index': 'stress_index'
+        }
+        
+        return metric_mapping.get(full_metric_name)
+
     def get_available_metrics(self, analysis_results: Dict[str, Any]) -> List[str]:
         """Get a list of available HRV metrics from the analysis results."""
         metrics = set()

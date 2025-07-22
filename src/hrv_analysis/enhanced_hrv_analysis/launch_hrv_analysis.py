@@ -274,7 +274,7 @@ def check_dependencies():
     
     if missing_optional:
         logger.warning("Missing optional dependencies. "
-                      "For full functionality:")
+                       "For full functionality:")
         for pkg in missing_optional:
             logger.warning(f"  pip install {pkg}")
     
