@@ -2,15 +2,15 @@ VALQUIRIA MISSION PHASES ANALYSIS REPORT
 ENHANCED HRV ANALYSIS INTEGRATION
 =======================================================
 
-Analysis Date: 2025-07-21 20:28:38
+Analysis Date: 2025-07-21 21:24:00
 Integration: Enhanced HRV Analysis System
 Mission: Valquiria Space Analog Simulation
 
 MISSION PHASE DEFINITIONS:
 ------------------------------
-Early Phase: Sol 2.0 - 6.7
-Mid Phase: Sol 6.7 - 11.3
-Late Phase: Sol 11.3 - 16.0
+Early Phase: Sol 0.0 - 0.3
+Mid Phase: Sol 0.3 - 0.7
+Late Phase: Sol 0.7 - 1.0
 
 DATASET SUMMARY:
 ------------------
@@ -18,27 +18,45 @@ Total subject-session combinations: 37
 Unique subjects: 8
 
 Phase distribution:
-  Early: 16 combinations (43.2%)
-  Mid: 9 combinations (24.3%)
-  Late: 12 combinations (32.4%)
+  Early: 37 combinations (100.0%)
+  Mid: 0 combinations (0.0%)
+  Late: 0 combinations (0.0%)
 
 METRICS ANALYZED:
 --------------------
 HRV Metrics:
   • SDNN
   • RMSSD
-  • HF_Power
   • LF_Power
-  • LF_HF_Ratio
+  • HF_Power
   • VLF_Power
+  • LF_HF_Ratio
+  • LF_NU
+  • HF_NU
+  • LF_Peak
+  • HF_Peak
+  • VLF_Peak
+  • HF_RMSSD_Ratio
 
 Physiological Metrics:
-  • Mean_HR
   • pNN50
-  • heart_rate_mean
-  • breathing_rate_mean
-  • activity_mean
-  • spo2_mean
+  • Mean_HR
+  • NN50
+  • pNN20
+  • CVNN
+  • SDSD
+  • Mean_NNI
+  • Median_NNI
+  • Total_Power
+  • Parasympathetic_Index
+  • RSA_Amplitude
+  • Respiratory_Frequency
+  • Vagal_Tone_Index
+  • Sympathetic_Index
+  • Stress_Index
+  • Autonomic_Balance
+  • Cardiac_Sympathetic_Index
+  • Beta_Adrenergic_Sensitivity
 
 GENERATED FILES:
 ------------------

@@ -565,7 +565,7 @@ class HRVAnalysisApp:
                   command=self._generate_all_plots,
                   style='Accent.TButton').grid(row=1, column=0, padx=5, pady=5, sticky="ew")
         
-        ttk.Button(buttons_frame, text="🎯 Elegant Metric Explorer", 
+        ttk.Button(buttons_frame, text="🎯 Metric Explorer", 
                   command=self._generate_elegant_time_series,
                   style='Primary.TButton').grid(row=1, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
         
@@ -612,6 +612,13 @@ class HRVAnalysisApp:
                                   foreground='#555555')
         gam_desc_label.pack(pady=(5, 0))
         
+        # Metric explorer description
+        metric_desc_label = ttk.Label(main_frame,
+                                    text="🎯 Metric Explorer: Research-backed single-metric focus with dropdown selection (RECOMMENDED)",
+                                    font=('Helvetica', 9),
+                                    foreground='#2E8B57')
+        metric_desc_label.pack(pady=(2, 0))
+        
         # Mission phases description
         phases_desc_label = ttk.Label(main_frame,
                                      text="Mission Phases: Compare physiological adaptation across Early, Mid, and Late mission phases",
@@ -625,13 +632,6 @@ class HRVAnalysisApp:
                                      font=('Helvetica', 9),
                                      foreground='#1B4F72')
         plotly_desc_label.pack(pady=(2, 0))
-        
-        # Elegant metric explorer description
-        elegant_desc_label = ttk.Label(main_frame,
-                                      text="🎯 Elegant Metric Explorer: Research-backed single-metric focus with dropdown selection (RECOMMENDED)",
-                                      font=('Helvetica', 9, 'bold'),
-                                      foreground='#D4AF37')
-        elegant_desc_label.pack(pady=(2, 0))
         
         # Status display
         self.plot_status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
@@ -2798,24 +2798,24 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             messagebox.showerror("Error", f"Error generating GAM custom analysis: {e}")
 
     def _generate_elegant_time_series(self):
-        """Generate the new elegant metric-focused time series visualization."""
+        """Generate the new metric-focused time series visualization."""
         try:
             if not self.analysis_results:
                 messagebox.showwarning("Warning", "No analysis results available")
                 return
 
-            self.plot_status_label.configure(text="Creating elegant metric-focused time series visualization...")
+            self.plot_status_label.configure(text="Creating metric-focused time series visualization...")
             self.root.update_idletasks()
             
-            # Generate elegant time series with metric selector
-            elegant_fig = self.interactive_plotter.create_elegant_metric_selector(
+            # Generate time series with metric selector
+            metric_fig = self.interactive_plotter.create_elegant_metric_selector(
                 analysis_results=self.analysis_results
             )
             
-            plot_path = Path("plots_output") / "hrv_elegant_time_series_explorer.html"
-            self.interactive_plotter.export_html(elegant_fig, str(plot_path))
+            plot_path = Path("plots_output") / "hrv_metric_explorer.html"
+            self.interactive_plotter.export_html(metric_fig, str(plot_path))
             
-            success_text = f"✅ Elegant Time Series Explorer Generated!\n"
+            success_text = f"✅ Metric Explorer Generated!\n"
             success_text += f"🎯 Research-backed single-metric visualization\n"
             success_text += f"📊 Clean, readable plots with dropdown selection\n"
             success_text += f"Analysis saved as: {plot_path.absolute()}"
@@ -2823,7 +2823,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
             
             # Show completion message
             completion_message = (
-                "🎉 Elegant Time Series Explorer Created!\n\n"
+                "🎉 Metric Explorer Created!\n\n"
                 "✨ Features:\n"
                 "• Clean, focused visualization (one metric at a time)\n"
                 "• Dropdown selection organized by HRV domains\n"
@@ -2835,13 +2835,13 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 "The plot will open automatically in your browser."
             )
             
-            messagebox.showinfo("Elegant Explorer Ready", completion_message)
+            messagebox.showinfo("Metric Explorer Ready", completion_message)
             self._open_plot_file(plot_path)
             
         except Exception as e:
-            logger.error(f"Error generating elegant time series: {e}")
+            logger.error(f"Error generating metric explorer: {e}")
             self.plot_status_label.configure(text=f"❌ Error: {e}")
-            messagebox.showerror("Error", f"Failed to generate elegant time series: {e}")
+            messagebox.showerror("Error", f"Failed to generate metric explorer: {e}")
 
     def _open_plot_file(self, file_path):
         """Open plot file in default browser."""

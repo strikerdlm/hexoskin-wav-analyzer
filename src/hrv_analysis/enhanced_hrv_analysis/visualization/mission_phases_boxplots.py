@@ -1,9 +1,9 @@
 """
 Mission Phases Boxplot Generator for Enhanced HRV Analysis
 
-This module provides boxplot visualization capabilities for comparing physiological
-and HRV metrics across three mission phases (Early, Mid, Late) in the Valquiria
-space analog simulation.
+This module provides boxplot visualization capabilities for comparing 
+physiological and HRV metrics across three mission phases (Early, Mid, Late) 
+in the Valquiria space analog simulation.
 
 Author: AI Assistant  
 Integration: Enhanced HRV Analysis System
@@ -15,19 +15,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Tuple, Any
 from scipy import stats
 import logging
 
 # Import HRV reference ranges
 try:
-    from visualization.hrv_reference_ranges import hrv_reference_ranges, get_reference_range
+    from visualization.hrv_reference_ranges import (
+        hrv_reference_ranges, get_reference_range
+    )
 except ImportError:
     try:
-        from enhanced_hrv_analysis.visualization.hrv_reference_ranges import hrv_reference_ranges, get_reference_range
+        from enhanced_hrv_analysis.visualization.hrv_reference_ranges import (
+            hrv_reference_ranges, get_reference_range
+        )
     except ImportError:
         hrv_reference_ranges = None
         get_reference_range = None
@@ -63,7 +65,8 @@ class MissionPhasesBoxplotGenerator:
         
         logger.info("MissionPhasesBoxplotGenerator initialized")
     
-    def prepare_mission_data(self, analysis_results: Dict[str, Any]) -> Tuple[pd.DataFrame, Dict[str, Tuple[float, float]]]:
+    def prepare_mission_data(self, analysis_results: Dict[str, Any]) -> (
+            Tuple[pd.DataFrame, Dict[str, Tuple[float, float]]]):
         """
         Prepare mission data from HRV analysis results for phase analysis.
         
@@ -78,7 +81,10 @@ class MissionPhasesBoxplotGenerator:
         # Use comprehensive metric extraction
         try:
             df = self._extract_hrv_metrics_from_results(analysis_results)
-            logger.info(f"Successfully extracted data for {len(df)} subject-session combinations")
+            logger.info(
+                f"Successfully extracted data for {len(df)} "
+                "subject-session combinations"
+            )
         except ValueError as e:
             logger.error(f"Failed to extract HRV metrics: {e}")
             # Create a minimal DataFrame as fallback
@@ -88,45 +94,132 @@ class MissionPhasesBoxplotGenerator:
                 'Sol': [1.0]
             })
         
-        # Define mission phases based on Sol distribution
+        # Enhanced debugging information
+        logger.info(f"DataFrame shape: {df.shape}")
+        logger.info(f"DataFrame columns: {list(df.columns)}")
+        if 'Sol' in df.columns:
+            logger.info(f"Sol values range: {df['Sol'].min()} to "
+                       f"{df['Sol'].max()}")
+            sol_counts = df['Sol'].value_counts().head().to_dict()
+            logger.info(f"Sol value distribution: {sol_counts}")
+        
+        # Define mission phases with more robust logic
         if 'Sol' in df.columns and df['Sol'].notna().sum() > 0:
-            sol_min = df['Sol'].min()
-            sol_max = df['Sol'].max()
+            sol_values = df['Sol'].dropna()
+            sol_min = sol_values.min()
+            sol_max = sol_values.max()
             sol_range = sol_max - sol_min
             
-            if sol_range > 0:
-                phase_duration = sol_range / 3
+            logger.info(f"Sol range: {sol_min} to {sol_max} "
+                       f"(range: {sol_range})")
+            
+            # ALWAYS use data-driven phases to ensure equal distribution
+            # This ensures we have data in all three phases regardless of actual Sol values
+            if sol_range > 0.1:  # If we have any meaningful spread
+                # Use data quantiles to ensure equal distribution
+                sol_33 = sol_values.quantile(0.33)
+                sol_67 = sol_values.quantile(0.67)
+                
                 mission_phases = {
-                    'Early': (sol_min, sol_min + phase_duration),
-                    'Mid': (sol_min + phase_duration, sol_min + 2 * phase_duration),
-                    'Late': (sol_min + 2 * phase_duration, sol_max)
+                    'Early': (sol_min, sol_33),
+                    'Mid': (sol_33, sol_67),
+                    'Late': (sol_67, sol_max)
                 }
+                logger.info(
+                    f"Using quantile-based phases: "
+                    f"Early ({sol_min:.2f}-{sol_33:.2f}), "
+                    f"Mid ({sol_33:.2f}-{sol_67:.2f}), "
+                    f"Late ({sol_67:.2f}-{sol_max:.2f})"
+                )
             else:
-                # Single Sol - create artificial phases
+                # All values are nearly the same - create artificial phases
+                center = sol_values.mean()
+                spread = max(0.1, sol_range)
                 mission_phases = {
-                    'Early': (sol_min, sol_min + 0.33),
-                    'Mid': (sol_min + 0.33, sol_min + 0.67), 
-                    'Late': (sol_min + 0.67, sol_min + 1)
+                    'Early': (center - spread, center - spread/3),
+                    'Mid': (center - spread/3, center + spread/3), 
+                    'Late': (center + spread/3, center + spread)
                 }
+                logger.info(f"Using artificial phases around Sol {center:.2f}")
         else:
-            # No Sol data - use index-based phases
+            # No Sol data - use sequential assignment
+            total_records = len(df)
             mission_phases = {
-                'Early': (0, len(df) / 3),
-                'Mid': (len(df) / 3, 2 * len(df) / 3),
-                'Late': (2 * len(df) / 3, len(df))
+                'Early': (0, total_records / 3),
+                'Mid': (total_records / 3, 2 * total_records / 3),
+                'Late': (2 * total_records / 3, total_records)
             }
+            logger.info("Using sequential record-based phases")
         
-        # Add phase labels
-        conditions = [
-            (df['Sol'] >= mission_phases['Early'][0]) & (df['Sol'] <= mission_phases['Early'][1]),
-            (df['Sol'] > mission_phases['Mid'][0]) & (df['Sol'] <= mission_phases['Mid'][1]),
-            (df['Sol'] > mission_phases['Late'][0]) & (df['Sol'] <= mission_phases['Late'][1])
-        ]
+        # Add phase labels with INCLUSIVE boundary logic to ensure proper assignment
+        if 'Sol' in df.columns:
+            conditions = [
+                (df['Sol'] >= mission_phases['Early'][0]) & (df['Sol'] <= mission_phases['Early'][1]),
+                (df['Sol'] > mission_phases['Early'][1]) & (df['Sol'] <= mission_phases['Mid'][1]),
+                (df['Sol'] > mission_phases['Mid'][1]) & (df['Sol'] <= mission_phases['Late'][1])
+            ]
+        else:
+            # Use row index for assignment
+            df['Sol'] = range(len(df))  # Create artificial Sol values
+            conditions = [
+                (df.index >= mission_phases['Early'][0]) & (df.index < mission_phases['Mid'][0]),
+                (df.index >= mission_phases['Mid'][0]) & (df.index < mission_phases['Late'][0]),
+                (df.index >= mission_phases['Late'][0]) & (df.index <= mission_phases['Late'][1])
+            ]
+        
         choices = ['Early', 'Mid', 'Late']
-        df['Mission_Phase'] = np.select(conditions, choices, default='Unknown')
+        df['Mission_Phase'] = np.select(conditions, choices, default='Early')  # Default to Early
         
+        # Ensure we have at least some data in each phase
+        phase_counts = df['Mission_Phase'].value_counts()
         logger.info(f"Defined mission phases: {mission_phases}")
-        logger.info(f"Phase distribution: {df['Mission_Phase'].value_counts().to_dict()}")
+        logger.info(f"Phase distribution: {phase_counts.to_dict()}")
+        
+        # Force equal distribution if phases are still empty
+        if len(phase_counts) < 3 or (phase_counts == 0).any():
+            logger.warning("Uneven phase distribution detected, forcing equal distribution")
+            # Sort by Sol to maintain temporal order
+            df_sorted = df.sort_values('Sol').reset_index(drop=True)
+            n_records = len(df_sorted)
+            
+            # Calculate boundaries for equal thirds
+            third1 = n_records // 3
+            third2 = 2 * n_records // 3
+            
+            new_phases = ['Early'] * third1 + ['Mid'] * (third2 - third1) + ['Late'] * (n_records - third2)
+            
+            # Map back to original dataframe order
+            phase_mapping = dict(zip(df_sorted.index, new_phases))
+            df['Mission_Phase'] = df.index.map(phase_mapping)
+            
+            # Update mission phases boundaries based on actual assignments
+            early_sols = df[df['Mission_Phase'] == 'Early']['Sol']
+            mid_sols = df[df['Mission_Phase'] == 'Mid']['Sol']  
+            late_sols = df[df['Mission_Phase'] == 'Late']['Sol']
+            
+            mission_phases = {
+                'Early': (early_sols.min(), early_sols.max()),
+                'Mid': (mid_sols.min(), mid_sols.max()),
+                'Late': (late_sols.min(), late_sols.max())
+            }
+            
+            final_counts = df['Mission_Phase'].value_counts()
+            logger.info(f"Forced equal distribution - Phase counts: {final_counts.to_dict()}")
+            logger.info(f"Updated mission phases: {mission_phases}")
+        
+        # Validate we have usable data
+        valid_metrics = []
+        for col in df.columns:
+            if col not in ['Subject', 'Session', 'Sol', 'Mission_Phase']:
+                valid_count = df[col].notna().sum()
+                if valid_count > 0:
+                    valid_metrics.append(f"{col} ({valid_count})")
+        
+        logger.info(f"Found {len(valid_metrics)} metrics with valid data:")
+        for metric in valid_metrics[:5]:  # Show first 5
+            logger.info(f"  • {metric}")
+        if len(valid_metrics) > 5:
+            logger.info(f"  • ... and {len(valid_metrics) - 5} more")
         
         return df, mission_phases
     

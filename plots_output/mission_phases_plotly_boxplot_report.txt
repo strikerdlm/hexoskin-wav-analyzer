@@ -1,0 +1,86 @@
+VALQUIRIA MISSION PHASES - INTERACTIVE BOXPLOT ANALYSIS
+ENHANCED HRV ANALYSIS WITH PLOTLY VISUALIZATIONS
+============================================================
+
+Analysis Date: 2025-07-21 21:18:21
+Visualization: Interactive Plotly Boxplots
+Mission: Valquiria Space Analog Simulation
+
+MISSION PHASE DEFINITIONS:
+------------------------------
+Early Phase: Sol 0.0 - 0.3
+Mid Phase: Sol 0.3 - 0.7
+Late Phase: Sol 0.7 - 1.0
+
+DATASET SUMMARY:
+------------------
+Total subject-session combinations: 37
+Unique subjects: 8
+
+Phase distribution:
+  Early: 37 combinations (100.0%)
+  Mid: 0 combinations (0.0%)
+  Late: 0 combinations (0.0%)
+
+GENERATED INTERACTIVE PLOTS:
+--------------------------------
+ 1. Sdnn - mission_phases_sdnn_boxplot.html
+ 2. Rmssd - mission_phases_rmssd_boxplot.html
+ 3. Pnn50 - mission_phases_pnn50_boxplot.html
+ 4. Mean Hr - mission_phases_mean_hr_boxplot.html
+ 5. Nn50 - mission_phases_nn50_boxplot.html
+ 6. Pnn20 - mission_phases_pnn20_boxplot.html
+ 7. Cvnn - mission_phases_cvnn_boxplot.html
+ 8. Sdsd - mission_phases_sdsd_boxplot.html
+ 9. Mean Nni - mission_phases_mean_nni_boxplot.html
+10. Median Nni - mission_phases_median_nni_boxplot.html
+11. Lf Power - mission_phases_lf_power_boxplot.html
+12. Hf Power - mission_phases_hf_power_boxplot.html
+13. Vlf Power - mission_phases_vlf_power_boxplot.html
+14. Total Power - mission_phases_total_power_boxplot.html
+15. Lf Hf Ratio - mission_phases_lf_hf_ratio_boxplot.html
+16. Lf Nu - mission_phases_lf_nu_boxplot.html
+17. Hf Nu - mission_phases_hf_nu_boxplot.html
+18. Lf Peak - mission_phases_lf_peak_boxplot.html
+19. Hf Peak - mission_phases_hf_peak_boxplot.html
+20. Vlf Peak - mission_phases_vlf_peak_boxplot.html
+21. Parasympathetic Index - mission_phases_parasympathetic_index_boxplot.html
+22. Rsa Amplitude - mission_phases_rsa_amplitude_boxplot.html
+23. Respiratory Frequency - mission_phases_respiratory_frequency_boxplot.html
+24. Vagal Tone Index - mission_phases_vagal_tone_index_boxplot.html
+25. Hf Rmssd Ratio - mission_phases_hf_rmssd_ratio_boxplot.html
+26. Sympathetic Index - mission_phases_sympathetic_index_boxplot.html
+27. Stress Index - mission_phases_stress_index_boxplot.html
+28. Autonomic Balance - mission_phases_autonomic_balance_boxplot.html
+29. Cardiac Sympathetic Index - mission_phases_cardiac_sympathetic_index_boxplot.html
+30. Beta Adrenergic Sensitivity - mission_phases_beta_adrenergic_sensitivity_boxplot.html
+
+INTERACTIVE FEATURES:
+----------------------
+• Individual plots for each HRV metric
+• Interactive hover information with detailed values
+• Normal reference ranges (25th-75th percentiles) displayed as background bands
+• Reference median lines for clinical interpretation
+• Statistical significance testing (Kruskal-Wallis) with p-values
+• Professional aerospace medicine styling
+• Zoom, pan, and export capabilities
+• Browser-based viewing with responsive design
+
+USAGE INSTRUCTIONS:
+--------------------
+1. Open any .html file in your web browser
+2. Use mouse to hover over data points for detailed information
+3. Use toolbar to zoom, pan, or export plots
+4. Green background bands show normal physiological ranges
+5. Dashed green lines show reference median values
+6. Statistical test results appear in top-right corner
+
+CLINICAL INTERPRETATION:
+-------------------------
+• Values within green bands are in normal physiological range
+• Significant p-values (p < 0.05) indicate phase-dependent changes
+• Individual subject patterns can be assessed for adaptation responses
+• Outliers may indicate individual stress responses or measurement artifacts
+
+INTEGRATION SUCCESS: Interactive Plotly boxplots successfully generated
+for comprehensive mission phase analysis with clinical reference ranges.

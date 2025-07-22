@@ -12,7 +12,6 @@ This module provides interactive plotting capabilities for HRV analysis includin
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.offline as pyo
 from scipy import signal, stats
@@ -685,7 +684,18 @@ class InteractivePlotter:
                     gam_data = self._fit_gam_model(sols_array, values_array, confidence_level)
                     
                     if gam_data is not None:
-                        # Add confidence interval first (so it appears behind the line)
+                        # Determine the X-axis range for reference bands
+                        x_min = min(sols_array.min(), gam_data['x_smooth'].min())
+                        x_max = max(sols_array.max(), gam_data['x_smooth'].max())
+                        # Add a small buffer to ensure full coverage
+                        x_buffer = (x_max - x_min) * 0.05  # 5% buffer
+                        x_range = (x_min - x_buffer, x_max + x_buffer)
+                        
+                        # Add normal reference ranges as background bands FIRST
+                        # This ensures they appear behind all other data
+                        self._add_reference_bands_to_gam_plot(fig, metric, row, col, idx == 0, x_range)
+                        
+                        # Add confidence interval (appears above reference bands, below data)
                         fig.add_trace(
                             go.Scatter(
                                 x=np.concatenate([gam_data['x_smooth'], gam_data['x_smooth'][::-1]]),
@@ -700,10 +710,7 @@ class InteractivePlotter:
                             row=row, col=col
                         )
                         
-                        # Add normal reference ranges as background bands
-                        self._add_reference_bands_to_gam_plot(fig, metric, row, col, idx == 0)
-                        
-                        # Add GAM trend line
+                        # Add GAM trend line (appears above everything)
                         fig.add_trace(
                             go.Scatter(
                                 x=gam_data['x_smooth'],
@@ -719,6 +726,10 @@ class InteractivePlotter:
                             ),
                             row=row, col=col
                         )
+                    else:
+                        # If GAM fitting failed, still add reference bands with data range
+                        x_range = (sols_array.min() - 0.5, sols_array.max() + 0.5)
+                        self._add_reference_bands_to_gam_plot(fig, metric, row, col, idx == 0, x_range)
             
             # Professional layout configuration
             layout_config = self._get_responsive_layout(height=300 * rows)
@@ -842,26 +853,66 @@ class InteractivePlotter:
             return self._fit_polynomial_trend(x_data, y_data, confidence_level)
         
         try:
-            # Prepare data
-            df = pd.DataFrame({'x': x_data, 'y': y_data})
-            df = df.sort_values('x')
+            # Validate input data
+            if len(x_data) != len(y_data):
+                raise ValueError(f"X and Y data must have same length: {len(x_data)} != {len(y_data)}")
             
-            # Create smoothing spline for GAM
-            x_spline = BSplines(df[['x']], df=[6], degree=[3])
+            if len(x_data) < 5:
+                logger.debug(f"Insufficient data points for GAM ({len(x_data)}), using polynomial fallback")
+                return self._fit_polynomial_trend(x_data, y_data, confidence_level)
+            
+            # Remove any NaN values
+            valid_mask = ~(np.isnan(x_data) | np.isnan(y_data))
+            if not np.any(valid_mask):
+                raise ValueError("No valid data points after removing NaNs")
+            
+            x_clean = x_data[valid_mask]
+            y_clean = y_data[valid_mask]
+            
+            if len(x_clean) < 5:
+                logger.debug(f"Insufficient valid data points for GAM ({len(x_clean)}), using polynomial fallback")
+                return self._fit_polynomial_trend(x_clean, y_clean, confidence_level)
+            
+            # Prepare data and sort by x values
+            df = pd.DataFrame({'x': x_clean, 'y': y_clean}).sort_values('x').reset_index(drop=True)
+            
+            # Determine appropriate degrees of freedom based on data size
+            # Rule of thumb: df should be much smaller than number of data points
+            n_points = len(df)
+            if n_points >= 20:
+                df_spline = min(6, max(3, n_points // 4))  # Between 3 and 6, based on data size
+            elif n_points >= 10:
+                df_spline = 3
+            else:
+                df_spline = 2
+            
+            logger.debug(f"GAM fitting with {n_points} points, using df={df_spline}")
+            
+            # Create smoothing spline for GAM with appropriate degrees of freedom
+            x_spline = BSplines(df[['x']], df=[df_spline], degree=[3])
             
             # Fit GAM model
             gam_model = GLMGam(df['y'], smoother=x_spline, family=Gaussian())
             gam_results = gam_model.fit()
             
             # Create smooth x values for prediction
-            x_range = np.linspace(df['x'].min(), df['x'].max(), 50)
+            x_min, x_max = df['x'].min(), df['x'].max()
+            x_range = np.linspace(x_min, x_max, 50)
             x_smooth_df = pd.DataFrame({'x': x_range})
-            x_smooth_spline = BSplines(x_smooth_df[['x']], df=[6], degree=[3])
+            
+            # Create matching spline basis for prediction with same parameters
+            x_smooth_spline = BSplines(x_smooth_df[['x']], df=[df_spline], degree=[3])
             
             # Predict with confidence intervals
             predictions = gam_results.get_prediction(x_smooth_spline)
             y_smooth = predictions.predicted_mean
             conf_int = predictions.conf_int(alpha=1-confidence_level)
+            
+            # Validate prediction outputs
+            if len(y_smooth) != len(x_range):
+                raise ValueError(f"Prediction length mismatch: {len(y_smooth)} != {len(x_range)}")
+            
+            logger.debug(f"GAM fitting successful with df={df_spline}, predictions shape: {y_smooth.shape}")
             
             return {
                 'x_smooth': x_range,
@@ -872,43 +923,92 @@ class InteractivePlotter:
             
         except Exception as e:
             logger.warning(f"GAM fitting failed: {e}, using polynomial fallback")
+            logger.debug(f"GAM error details - Data shapes: x_data={x_data.shape}, y_data={y_data.shape}")
             return self._fit_polynomial_trend(x_data, y_data, confidence_level)
     
-    def _fit_polynomial_trend(self, x_data: np.ndarray, y_data: np.ndarray, confidence_level: float = 0.95) -> Dict[str, np.ndarray]:
+    def _fit_polynomial_trend(self, x_data: np.ndarray, y_data: np.ndarray, confidence_level: float = 0.95) -> Optional[Dict[str, np.ndarray]]:
         """Fallback polynomial trend fitting with confidence intervals."""
         try:
-            # Sort data
-            sorted_indices = np.argsort(x_data)
-            x_sorted = x_data[sorted_indices]
-            y_sorted = y_data[sorted_indices]
+            # Validate input data
+            if len(x_data) != len(y_data):
+                raise ValueError(f"X and Y data must have same length: {len(x_data)} != {len(y_data)}")
             
-            # Fit polynomial (degree 2 for smooth curve)
-            degree = min(2, len(x_data) - 1)
+            if len(x_data) < 2:
+                logger.warning(f"Insufficient data points for trend fitting ({len(x_data)})")
+                return None
+            
+            # Remove any NaN values
+            valid_mask = ~(np.isnan(x_data) | np.isnan(y_data))
+            if not np.any(valid_mask):
+                logger.warning("No valid data points after removing NaNs")
+                return None
+            
+            x_clean = x_data[valid_mask]
+            y_clean = y_data[valid_mask]
+            
+            if len(x_clean) < 2:
+                logger.warning(f"Insufficient valid data points for trend fitting ({len(x_clean)})")
+                return None
+            
+            # Sort data
+            sorted_indices = np.argsort(x_clean)
+            x_sorted = x_clean[sorted_indices]
+            y_sorted = y_clean[sorted_indices]
+            
+            # Choose polynomial degree based on data amount
+            if len(x_sorted) >= 4:
+                degree = 2  # Quadratic for smooth curves
+            else:
+                degree = 1  # Linear for limited data
+            
+            logger.debug(f"Polynomial fitting with {len(x_sorted)} points, degree={degree}")
+            
+            # Fit polynomial
             poly_coeffs = np.polyfit(x_sorted, y_sorted, degree)
             
             # Create smooth x values
             x_smooth = np.linspace(x_sorted.min(), x_sorted.max(), 50)
             y_smooth = np.polyval(poly_coeffs, x_smooth)
             
-            # Calculate confidence intervals using bootstrap
-            n_bootstrap = 100
-            predictions = []
-            
-            for _ in range(n_bootstrap):
-                # Bootstrap sample
-                indices = np.random.choice(len(x_sorted), len(x_sorted), replace=True)
-                x_boot = x_sorted[indices]
-                y_boot = y_sorted[indices]
+            # Calculate confidence intervals using bootstrap if we have enough data
+            if len(x_sorted) >= 5:
+                n_bootstrap = min(100, len(x_sorted) * 10)  # Adaptive bootstrap samples
+                predictions = []
                 
-                # Fit polynomial
-                boot_coeffs = np.polyfit(x_boot, y_boot, degree)
-                boot_pred = np.polyval(boot_coeffs, x_smooth)
-                predictions.append(boot_pred)
+                for _ in range(n_bootstrap):
+                    # Bootstrap sample
+                    indices = np.random.choice(len(x_sorted), len(x_sorted), replace=True)
+                    x_boot = x_sorted[indices]
+                    y_boot = y_sorted[indices]
+                    
+                    try:
+                        # Fit polynomial
+                        boot_coeffs = np.polyfit(x_boot, y_boot, degree)
+                        boot_pred = np.polyval(boot_coeffs, x_smooth)
+                        predictions.append(boot_pred)
+                    except np.linalg.LinAlgError:
+                        # Skip this bootstrap sample if singular matrix
+                        continue
+                
+                if predictions:
+                    predictions = np.array(predictions)
+                    alpha = 1 - confidence_level
+                    lower_ci = np.percentile(predictions, 100 * alpha/2, axis=0)
+                    upper_ci = np.percentile(predictions, 100 * (1-alpha/2), axis=0)
+                else:
+                    # Fallback to simple error estimation
+                    residuals = y_sorted - np.polyval(poly_coeffs, x_sorted)
+                    std_error = np.std(residuals)
+                    lower_ci = y_smooth - 1.96 * std_error
+                    upper_ci = y_smooth + 1.96 * std_error
+            else:
+                # For very small datasets, use simple error estimation
+                residuals = y_sorted - np.polyval(poly_coeffs, x_sorted)
+                std_error = np.std(residuals) if len(residuals) > 1 else 0.1 * np.std(y_sorted)
+                lower_ci = y_smooth - 1.96 * std_error
+                upper_ci = y_smooth + 1.96 * std_error
             
-            predictions = np.array(predictions)
-            alpha = 1 - confidence_level
-            lower_ci = np.percentile(predictions, 100 * alpha/2, axis=0)
-            upper_ci = np.percentile(predictions, 100 * (1-alpha/2), axis=0)
+            logger.debug(f"Polynomial fitting successful, predictions shape: {y_smooth.shape}")
             
             return {
                 'x_smooth': x_smooth,
@@ -919,6 +1019,7 @@ class InteractivePlotter:
             
         except Exception as e:
             logger.error(f"Polynomial trend fitting failed: {e}")
+            logger.debug(f"Polynomial error details - Data shapes: x_data={x_data.shape}, y_data={y_data.shape}")
             return None
 
     def _extract_time_series_data(self, analysis_results: Dict[str, Any], subjects_filter: List[str] = None) -> Dict[str, Dict[str, Dict[str, list]]]:
@@ -1729,7 +1830,7 @@ class InteractivePlotter:
             )
         
     def _add_reference_bands_to_gam_plot(self, fig, metric: str, row: int, col: int, 
-                                       show_legend: bool) -> None:
+                                       show_legend: bool, x_range: Tuple[float, float] = None) -> None:
         """
         Add reference range bands to GAM plots for clinical interpretation.
         
@@ -1739,31 +1840,49 @@ class InteractivePlotter:
             row: Subplot row
             col: Subplot column  
             show_legend: Whether to show legend entries for this subplot
+            x_range: Tuple of (min_x, max_x) for the data range, will auto-detect if None
         """
         if not hrv_reference_ranges:
+            logger.debug("HRV reference ranges not available")
             return
         
         # Extract metric key from full metric name
         metric_key = self._extract_metric_key_for_reference(metric)
         if not metric_key:
+            logger.debug(f"No reference key found for metric: {metric}")
             return
             
         ref_range = hrv_reference_ranges.get_range(metric_key)
         if not ref_range:
+            logger.debug(f"No reference range found for key: {metric_key}")
             return
         
-        # Add normal range band (25th-75th percentile) - the most clinically relevant
+        # Auto-detect X-axis range if not provided
+        if x_range is None:
+            # Use a reasonable default range (0 to 16 days for Valquiria mission)
+            x_range = (0, 16)
+            logger.debug(f"Using default X-range for reference bands: {x_range}")
+        else:
+            logger.debug(f"Using provided X-range for reference bands: {x_range}")
+        
+        # Add normal range band (25th-75th percentile) spanning full X-axis
         if ref_range.percentile_25 and ref_range.percentile_75:
+            # Create a semi-transparent rectangle that spans the entire X-axis
             fig.add_shape(
                 type="rect",
-                x0=0, x1=1,  # Full width in paper coordinates
+                x0=x_range[0], 
+                x1=x_range[1],
                 y0=ref_range.percentile_25, 
                 y1=ref_range.percentile_75,
-                fillcolor="rgba(34, 139, 34, 0.15)",  # Light green
+                fillcolor="rgba(34, 139, 34, 0.15)",  # Light green with transparency
                 line=dict(width=0),
-                row=row, col=col,
-                xref="paper", yref="y"
+                layer='below',  # Ensure it appears behind data points
+                row=row, col=col
             )
+            
+            logger.debug(f"Added normal range band for {metric_key}: "
+                        f"Y=[{ref_range.percentile_25:.2f}, {ref_range.percentile_75:.2f}], "
+                        f"X=[{x_range[0]}, {x_range[1]}]")
             
             # Add legend entry for normal range (only on first subplot)
             if show_legend:
@@ -1771,7 +1890,12 @@ class InteractivePlotter:
                     go.Scatter(
                         x=[None], y=[None],
                         mode='markers',
-                        marker=dict(size=10, color='rgba(34, 139, 34, 0.6)', symbol='square'),
+                        marker=dict(
+                            size=12, 
+                            color='rgba(34, 139, 34, 0.4)', 
+                            symbol='square',
+                            line=dict(width=1, color='rgba(34, 139, 34, 0.8)')
+                        ),
                         name='Normal Range (25th-75th %ile)',
                         showlegend=True,
                         hoverinfo='skip'
@@ -1779,16 +1903,25 @@ class InteractivePlotter:
                     row=row, col=col
                 )
         
-        # Add median reference line
+        # Add reference median line spanning full X-axis
         if ref_range.percentile_50:
-            fig.add_hline(
-                y=ref_range.percentile_50,
-                line_dash="dash",
-                line_color="green",
-                line_width=2,
-                opacity=0.8,
+            fig.add_shape(
+                type="line",
+                x0=x_range[0],
+                x1=x_range[1],
+                y0=ref_range.percentile_50,
+                y1=ref_range.percentile_50,
+                line=dict(
+                    color='rgba(34, 139, 34, 0.8)',  # Slightly more opaque green
+                    dash='dash',
+                    width=2
+                ),
+                layer='below',  # Behind data but above normal range
                 row=row, col=col
             )
+            
+            logger.debug(f"Added reference median line for {metric_key}: "
+                        f"Y={ref_range.percentile_50:.2f}, X=[{x_range[0]}, {x_range[1]}]")
             
             # Add legend entry for median (only on first subplot)
             if show_legend:
@@ -1796,7 +1929,7 @@ class InteractivePlotter:
                     go.Scatter(
                         x=[None], y=[None],
                         mode='lines',
-                        line=dict(color='green', dash='dash', width=2),
+                        line=dict(color='rgba(34, 139, 34, 0.8)', dash='dash', width=2),
                         name='Reference Median',
                         showlegend=True,
                         hoverinfo='skip'
@@ -1804,31 +1937,32 @@ class InteractivePlotter:
                     row=row, col=col
                 )
         
-        # Add extreme risk thresholds if available
-        risk_thresholds = hrv_reference_ranges.get_high_risk_threshold(metric_key)
-        if risk_thresholds and show_legend:
-            # Add very low threshold
-            if 'very_low' in risk_thresholds:
-                fig.add_hline(
-                    y=risk_thresholds['very_low'],
-                    line_dash="dot",
-                    line_color="red",
-                    line_width=1,
-                    opacity=0.6,
-                    row=row, col=col
-                )
-                
-                fig.add_trace(
-                    go.Scatter(
-                        x=[None], y=[None],
-                        mode='lines',
-                        line=dict(color='red', dash='dot', width=1),
-                        name='High Risk Threshold',
-                        showlegend=True,
-                        hoverinfo='skip'
-                    ),
-                    row=row, col=col
-                )
+        # Add clinical interpretation annotation (only on first subplot)
+        if show_legend and ref_range.percentile_25 and ref_range.percentile_75:
+            # Get population info for annotation
+            try:
+                citation_info = hrv_reference_ranges.get_citation_info(metric_key)
+                if citation_info and 'population' in citation_info:
+                    pop_text = citation_info['population'][:40] + "..." if len(citation_info['population']) > 40 else citation_info['population']
+                    
+                    fig.add_annotation(
+                        x=0.02,
+                        y=0.98,
+                        xref="paper",
+                        yref="paper",
+                        text=f"<b>Normal Range Reference</b><br>"
+                             f"Population: {pop_text}<br>"
+                             f"25th-75th percentile: {ref_range.percentile_25:.1f} - {ref_range.percentile_75:.1f}",
+                        showarrow=False,
+                        font=dict(size=9, color='rgba(34, 139, 34, 0.9)'),
+                        bgcolor="rgba(255,255,255,0.9)",
+                        bordercolor="rgba(34, 139, 34, 0.3)",
+                        borderwidth=1,
+                        xanchor="left",
+                        yanchor="top"
+                    )
+            except Exception as e:
+                logger.debug(f"Could not add clinical annotation: {e}")
     
     def _extract_metric_key_for_reference(self, full_metric_name: str) -> Optional[str]:
         """Extract the metric key for reference range lookup."""
@@ -2010,7 +2144,7 @@ class InteractivePlotter:
 
     def create_elegant_metric_selector(self, analysis_results: Dict[str, Any]) -> go.Figure:
         """
-        Create an elegant time series visualization with metric selection dropdown.
+        Create a time series visualization with metric selection dropdown.
         
         This approach implements research-backed best practices:
         - Avoids "spaghetti plots" with overlapping lines
@@ -2021,7 +2155,7 @@ class InteractivePlotter:
         Based on research from University of Iowa, Mode.com, and visualization experts
         who recommend small multiples and interactive selection over crowded plots.
         """
-        logger.info("Creating elegant metric-focused time series with dropdown selection")
+        logger.info("Creating metric-focused time series with dropdown selection")
         
         # Get comprehensive metrics organized by domain
         available_metrics_by_domain = self.get_available_metrics_by_domain(analysis_results)
@@ -2033,19 +2167,82 @@ class InteractivePlotter:
         fig = go.Figure()
         
         # Prepare data structure for all metrics
-        metrics_data = self._prepare_metrics_for_elegant_display(analysis_results, available_metrics_by_domain)
+        all_metrics_data = self._prepare_all_metrics_data(analysis_results, available_metrics_by_domain)
         
-        # Add initial metric (first available)
-        initial_domain = next(iter(available_metrics_by_domain.keys()))
-        initial_metric = available_metrics_by_domain[initial_domain][0]
+        if not all_metrics_data:
+            raise ValueError("No valid metric data found for visualization")
         
-        # Add traces for initial metric
-        self._add_metric_traces(fig, metrics_data, initial_metric)
+        # Color palette for subjects
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
         
-        # Create dropdown buttons organized by domain
-        dropdown_buttons = self._create_elegant_dropdown_buttons(metrics_data, available_metrics_by_domain)
+        # Add all traces (all metrics, all subjects) but make only first metric visible
+        first_metric = None
+        trace_index = 0
+        buttons = []
         
-        # Update layout with elegant styling
+        for metric_name, metric_data in all_metrics_data.items():
+            if first_metric is None:
+                first_metric = metric_name
+            
+            # Create visibility array for this metric
+            visible_for_this_metric = []
+            
+            for subject_name, subject_data in metric_data.items():
+                if subject_data:
+                    sols = [d['sol'] for d in subject_data]
+                    values = [d['value'] for d in subject_data]
+                    
+                    is_visible = (metric_name == first_metric)
+                    
+                    fig.add_trace(go.Scatter(
+                        x=sols,
+                        y=values,
+                        name=subject_name,
+                        mode='lines+markers',
+                        line=dict(
+                            width=2.5,
+                            color=colors[len(visible_for_this_metric) % len(colors)]
+                        ),
+                        marker=dict(
+                            size=6,
+                            symbol='circle',
+                            line=dict(width=1, color='white')
+                        ),
+                        hovertemplate=(
+                            f'<b>{subject_name}</b><br>'
+                            f'Sol: %{{x:.1f}}<br>'
+                            f'{self._get_metric_display_name(metric_name)}: %{{y:.2f}}<br>'
+                            '<extra></extra>'
+                        ),
+                        connectgaps=False,
+                        visible=is_visible
+                    ))
+                    
+                    visible_for_this_metric.append(trace_index)
+                    trace_index += 1
+            
+            # Create dropdown button for this metric
+            if visible_for_this_metric:
+                # Create visibility array (False for all traces, True for this metric's traces)
+                visibility = [False] * trace_index
+                for idx in visible_for_this_metric:
+                    visibility[idx] = True
+                
+                button = dict(
+                    label=self._get_metric_display_name(metric_name),
+                    method="update",
+                    args=[
+                        {"visible": visibility},
+                        {
+                            "yaxis.title": self._get_metric_display_name(metric_name),
+                            "title": f'<b>HRV Time Series Analysis - {self._get_metric_display_name(metric_name)}</b><br>'
+                                    f'<span style="font-size:14px">Select any HRV metric to view trends across all subjects</span>'
+                        }
+                    ]
+                )
+                buttons.append(button)
+        
+        # Update layout with professional styling
         fig.update_layout(
             title=dict(
                 text=f'<b>HRV Time Series Analysis - Metric Explorer</b><br>'
@@ -2062,7 +2259,7 @@ class InteractivePlotter:
                 zeroline=False
             ),
             yaxis=dict(
-                title=self._get_metric_display_name(initial_metric),
+                title=self._get_metric_display_name(first_metric) if first_metric else "HRV Metric",
                 title_font=dict(size=14, color='#2C3E50'),
                 tickfont=dict(size=12),
                 showgrid=True,
@@ -2088,7 +2285,7 @@ class InteractivePlotter:
             margin=dict(l=80, r=80, t=120, b=80),
             font=dict(family="Arial, sans-serif", size=12, color="#2C3E50"),
             updatemenus=[{
-                'buttons': dropdown_buttons,
+                'buttons': buttons,
                 'direction': 'down',
                 'pad': {'r': 10, 't': 10},
                 'showactive': True,
@@ -2127,11 +2324,12 @@ class InteractivePlotter:
         
         return fig
     
-    def _prepare_metrics_for_elegant_display(self, analysis_results: Dict[str, Any], 
-                                           available_metrics_by_domain: Dict[str, List[str]]) -> Dict[str, Dict]:
-        """Prepare comprehensive metrics data for elegant display."""
-        metrics_data = {}
+    def _prepare_all_metrics_data(self, analysis_results: Dict[str, Any], 
+                                 available_metrics_by_domain: Dict[str, List[str]]) -> Dict[str, Dict]:
+        """Prepare comprehensive metrics data for display with simplified structure."""
+        all_metrics = {}
         
+        # First, collect all possible metrics from the analysis results
         for subject_session, results in analysis_results.items():
             if not isinstance(results, dict) or 'hrv_results' not in results:
                 continue
@@ -2141,8 +2339,6 @@ class InteractivePlotter:
             subject_name = subject_session.split('_')[0] if '_' in subject_session else subject_session
             
             # Extract metrics from all domains
-            session_metrics = {}
-            
             for domain_name, domain_metrics in available_metrics_by_domain.items():
                 domain_key = domain_name.lower().replace(' ', '_')
                 
@@ -2150,130 +2346,39 @@ class InteractivePlotter:
                     domain_data = hrv_results[domain_key]
                     
                     for metric in domain_metrics:
-                        metric_key = metric.split('_', 1)[-1] if '_' in metric else metric
-                        metric_value = domain_data.get(metric_key.lower(), np.nan)
+                        # Try different variations of the metric key
+                        possible_keys = [metric, metric.lower(), metric.replace(' ', '_').lower()]
                         
-                        if not np.isnan(metric_value):
-                            full_metric_name = f"{domain_name}_{metric_key}"
-                            session_metrics[full_metric_name] = {
-                                'value': float(metric_value),
+                        metric_value = None
+                        for key in possible_keys:
+                            if key in domain_data and not np.isnan(float(domain_data[key])):
+                                metric_value = float(domain_data[key])
+                                break
+                        
+                        if metric_value is not None:
+                            metric_name = f"{domain_name}_{metric}"
+                            
+                            if metric_name not in all_metrics:
+                                all_metrics[metric_name] = {}
+                            
+                            if subject_name not in all_metrics[metric_name]:
+                                all_metrics[metric_name][subject_name] = []
+                            
+                            all_metrics[metric_name][subject_name].append({
+                                'value': metric_value,
                                 'sol': float(sol_number),
                                 'subject': subject_name,
                                 'session': subject_session,
                                 'domain': domain_name,
-                                'unit': self._get_metric_unit(metric_key)
-                            }
-            
-            # Add session metrics to global structure
-            for metric_name, metric_info in session_metrics.items():
-                if metric_name not in metrics_data:
-                    metrics_data[metric_name] = {}
-                
-                if subject_name not in metrics_data[metric_name]:
-                    metrics_data[metric_name][subject_name] = []
-                
-                metrics_data[metric_name][subject_name].append(metric_info)
+                                'unit': self._get_metric_unit(metric)
+                            })
         
         # Sort each subject's data by Sol number
-        for metric_name in metrics_data:
-            for subject_name in metrics_data[metric_name]:
-                metrics_data[metric_name][subject_name].sort(key=lambda x: x['sol'])
+        for metric_name in all_metrics:
+            for subject_name in all_metrics[metric_name]:
+                all_metrics[metric_name][subject_name].sort(key=lambda x: x['sol'])
         
-        return metrics_data
-    
-    def _add_metric_traces(self, fig: go.Figure, metrics_data: Dict[str, Dict], metric_name: str):
-        """Add traces for a specific metric to the figure."""
-        if metric_name not in metrics_data:
-            logger.warning(f"Metric {metric_name} not found in data")
-            return
-        
-        # Color palette for subjects
-        colors = px.colors.qualitative.Set1
-        
-        for i, (subject_name, subject_data) in enumerate(metrics_data[metric_name].items()):
-            if not subject_data:
-                continue
-                
-            # Extract data for this subject
-            sols = [d['sol'] for d in subject_data]
-            values = [d['value'] for d in subject_data]
-            
-            # Create trace
-            fig.add_trace(go.Scatter(
-                x=sols,
-                y=values,
-                name=subject_name,
-                mode='lines+markers',
-                line=dict(
-                    width=2.5,
-                    color=colors[i % len(colors)]
-                ),
-                marker=dict(
-                    size=6,
-                    symbol='circle',
-                    line=dict(width=1, color='white')
-                ),
-                hovertemplate=(
-                    f'<b>{subject_name}</b><br>'
-                    f'Sol: %{{x:.1f}}<br>'
-                    f'{self._get_metric_display_name(metric_name)}: %{{y:.2f}}<br>'
-                    '<extra></extra>'
-                ),
-                connectgaps=False
-            ))
-    
-    def _create_elegant_dropdown_buttons(self, metrics_data: Dict[str, Dict], 
-                                       available_metrics_by_domain: Dict[str, List[str]]) -> List[Dict]:
-        """Create organized dropdown buttons by domain."""
-        buttons = []
-        
-        for domain_name, domain_metrics in available_metrics_by_domain.items():
-            # Add domain separator
-            if buttons:  # Add separator if not first domain
-                buttons.append(dict(
-                    label=f"─── {domain_name.upper()} ───",
-                    method="skip",  # Non-functional separator
-                    args=[]
-                ))
-            
-            for metric in domain_metrics:
-                full_metric_name = f"{domain_name}_{metric}"
-                
-                if full_metric_name in metrics_data:
-                    # Create visibility array (hide all, show selected subjects)
-                    n_total_traces = sum(len(subjects) for subjects in metrics_data.values() for metric_key in [full_metric_name] if metric_key in metrics_data)
-                    
-                    # Calculate visibility for this metric
-                    visible_array = []
-                    current_trace_idx = 0
-                    
-                    for other_metric_name in metrics_data.keys():
-                        for subject_name in metrics_data[other_metric_name].keys():
-                            visible_array.append(other_metric_name == full_metric_name)
-                            current_trace_idx += 1
-                    
-                    # Create button
-                    button_dict = dict(
-                        label=self._get_metric_display_name(metric),
-                        method="update",
-                        args=[
-                            {
-                                "visible": visible_array,
-                                "x": [[d['sol'] for d in metrics_data[full_metric_name][subj]] 
-                                     for subj in metrics_data[full_metric_name].keys()] if full_metric_name in metrics_data else [],
-                                "y": [[d['value'] for d in metrics_data[full_metric_name][subj]] 
-                                     for subj in metrics_data[full_metric_name].keys()] if full_metric_name in metrics_data else []
-                            },
-                            {
-                                "yaxis.title": self._get_metric_display_name(metric),
-                                "title.text": f'<b>HRV Time Series Analysis - {self._get_metric_display_name(metric)}</b><br>'
-                                             f'<span style="font-size:14px">Trends across all subjects for {domain_name} domain</span>'
-                            }
-                        ]
-                    )
-                    buttons.append(button_dict)
-        
-        return buttons
+        return all_metrics
     
     def _get_metric_display_name(self, metric_name: str) -> str:
         """Convert metric name to display-friendly format."""
