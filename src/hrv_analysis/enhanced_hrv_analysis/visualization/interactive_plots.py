@@ -26,6 +26,16 @@ from dataclasses import dataclass
 from pathlib import Path
 import json
 
+# Import HRV reference ranges
+try:
+    from visualization.hrv_reference_ranges import hrv_reference_ranges, assess_hrv_value
+except ImportError:
+    try:
+        from enhanced_hrv_analysis.visualization.hrv_reference_ranges import hrv_reference_ranges, assess_hrv_value
+    except ImportError:
+        hrv_reference_ranges = None
+        assess_hrv_value = None
+
 # Enhanced statistical modeling for GAM analysis
 try:
     from statsmodels.gam.api import GLMGam, BSplines
@@ -1423,24 +1433,22 @@ class InteractivePlotter:
                 time_metrics = hrv_results['time_domain']
                 freq_metrics = hrv_results['frequency_domain']
                 
-                metrics_data = [
-                    ['SDNN (ms)', f"{time_metrics.get('sdnn', 0):.1f}"],
-                    ['RMSSD (ms)', f"{time_metrics.get('rmssd', 0):.1f}"],
-                    ['pNN50 (%)', f"{time_metrics.get('pnn50', 0):.1f}"],
-                    ['Mean HR (BPM)', f"{time_metrics.get('mean_hr', 0):.1f}"],
-                    ['LF Power (ms²)', f"{freq_metrics.get('lf_power', 0):.0f}"],
-                    ['HF Power (ms²)', f"{freq_metrics.get('hf_power', 0):.0f}"],
-                    ['LF/HF Ratio', f"{freq_metrics.get('lf_hf_ratio', 0):.2f}"]
-                ]
+                # Enhanced metrics table with reference ranges
+                metrics_data = self._create_metrics_table_with_ranges(
+                    time_metrics, freq_metrics
+                )
+                
+                # Enhanced table with reference ranges
+                header_values = ['Metric', 'Value', 'Normal Range'] if hrv_reference_ranges else ['Metric', 'Value']
                 
                 fig.add_trace(
                     go.Table(
-                        header=dict(values=['Metric', 'Value'],
+                        header=dict(values=header_values,
                                   fill_color=self.color_palette[0],
-                                  font=dict(color='white', size=12)),
+                                  font=dict(color='white', size=11)),
                         cells=dict(values=list(zip(*metrics_data)),
                                  fill_color='white',
-                                 font=dict(size=11))
+                                 font=dict(size=10))
                     ),
                     row=2, col=2
                 )
@@ -1608,6 +1616,124 @@ class InteractivePlotter:
         except Exception as e:
             logger.error(f"Error exporting HTML: {e}")
             return False
+    
+    def _create_metrics_table_with_ranges(self, time_metrics: Dict[str, float], 
+                                        freq_metrics: Dict[str, float]) -> List[List[str]]:
+        """
+        Create enhanced metrics table with reference ranges and status indicators.
+        
+        Args:
+            time_metrics: Time domain HRV metrics
+            freq_metrics: Frequency domain HRV metrics
+            
+        Returns:
+            List of metric rows for table display
+        """
+        if not hrv_reference_ranges or not assess_hrv_value:
+            # Fallback to simple table if reference ranges not available
+            return [
+                ['SDNN (ms)', f"{time_metrics.get('sdnn', 0):.1f}"],
+                ['RMSSD (ms)', f"{time_metrics.get('rmssd', 0):.1f}"],
+                ['pNN50 (%)', f"{time_metrics.get('pnn50', 0):.1f}"],
+                ['Mean HR (BPM)', f"{time_metrics.get('mean_hr', 0):.1f}"],
+                ['LF Power (ms²)', f"{freq_metrics.get('lf_power', 0):.0f}"],
+                ['HF Power (ms²)', f"{freq_metrics.get('hf_power', 0):.0f}"],
+                ['LF/HF Ratio', f"{freq_metrics.get('lf_hf_ratio', 0):.2f}"]
+            ]
+        
+        # Enhanced table with reference ranges
+        metrics_data = []
+        
+        # Define metrics to display
+        metric_configs = [
+            ('SDNN (ms)', 'sdnn', time_metrics.get('sdnn', 0), 1),
+            ('RMSSD (ms)', 'rmssd', time_metrics.get('rmssd', 0), 1),
+            ('pNN50 (%)', 'pnn50', time_metrics.get('pnn50', 0), 1),
+            ('HF Power (ms²)', 'hf_power', freq_metrics.get('hf_power', 0), 0),
+            ('LF Power (ms²)', 'lf_power', freq_metrics.get('lf_power', 0), 0),
+            ('LF/HF Ratio', 'lf_hf_ratio', freq_metrics.get('lf_hf_ratio', 0), 2)
+        ]
+        
+        for display_name, metric_key, value, decimals in metric_configs:
+            # Get assessment
+            assessment = assess_hrv_value(metric_key, value)
+            
+            # Format value
+            value_str = f"{value:.{decimals}f}"
+            
+            # Add status indicator
+            status_indicators = {
+                'very_low': '🔴',
+                'low': '🟡',
+                'normal': '🟢',
+                'high': '🟡',
+                'very_high': '🔴'
+            }
+            
+            status_icon = status_indicators.get(assessment.get('status', 'unknown'), '⚪')
+            
+            # Get reference range for display
+            ref_range = assessment.get('reference_range')
+            if ref_range:
+                range_str = f"({ref_range.percentile_25:.{decimals}f}-{ref_range.percentile_75:.{decimals}f})"
+            else:
+                range_str = ""
+            
+            # Create enhanced display
+            enhanced_value = f"{value_str} {status_icon}"
+            
+            metrics_data.append([
+                display_name,
+                enhanced_value,
+                f"Normal: {range_str}" if range_str else ""
+            ])
+        
+        return metrics_data
+    
+    def _add_reference_bands_to_plot(self, fig, metric_key: str, row: int, col: int, 
+                                   current_value: float) -> None:
+        """
+        Add reference range bands to a plot.
+        
+        Args:
+            fig: Plotly figure object
+            metric_key: Key for the metric
+            row: Subplot row
+            col: Subplot column
+            current_value: Current measured value
+        """
+        if not hrv_reference_ranges:
+            return
+        
+        ref_range = hrv_reference_ranges.get_range(metric_key)
+        if not ref_range:
+            return
+        
+        # Add normal range band (25th-75th percentile)
+        if ref_range.percentile_25 and ref_range.percentile_75:
+            fig.add_shape(
+                type="rect",
+                x0=0, x1=1,
+                y0=ref_range.percentile_25, y1=ref_range.percentile_75,
+                fillcolor="lightgreen",
+                opacity=0.2,
+                line=dict(width=0),
+                row=row, col=col,
+                xref="paper", yref="y"
+            )
+        
+        # Add median line
+        if ref_range.percentile_50:
+            fig.add_hline(
+                y=ref_range.percentile_50,
+                line_dash="dash",
+                line_color="green",
+                annotation_text="Median",
+                annotation_position="bottom right",
+                row=row, col=col
+            )
+        
+
     
     def get_available_metrics(self, analysis_results: Dict[str, Any]) -> List[str]:
         """Get a list of available HRV metrics from the analysis results."""

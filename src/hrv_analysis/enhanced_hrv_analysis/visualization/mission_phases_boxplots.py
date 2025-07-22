@@ -19,6 +19,16 @@ from typing import Dict, List, Tuple, Optional, Any
 from scipy import stats
 import logging
 
+# Import HRV reference ranges
+try:
+    from visualization.hrv_reference_ranges import hrv_reference_ranges, get_reference_range
+except ImportError:
+    try:
+        from enhanced_hrv_analysis.visualization.hrv_reference_ranges import hrv_reference_ranges, get_reference_range
+    except ImportError:
+        hrv_reference_ranges = None
+        get_reference_range = None
+
 logger = logging.getLogger(__name__)
 
 class MissionPhasesBoxplotGenerator:
@@ -248,6 +258,9 @@ class MissionPhasesBoxplotGenerator:
                     patch.set_facecolor(color)
                     patch.set_alpha(0.7)
                 
+                # Add reference ranges
+                self._add_reference_ranges_to_plot(ax, metric)
+                
                 # Format plot
                 clean_metric = metric.replace('_mean', '').replace('_', ' ').title()
                 ax.set_title(f'Individual {clean_metric} Across Mission Phases', 
@@ -339,6 +352,9 @@ class MissionPhasesBoxplotGenerator:
             for patch, color in zip(bp['boxes'], colors):
                 patch.set_facecolor(color)
                 patch.set_alpha(0.7)
+            
+            # Add reference ranges
+            self._add_reference_ranges_to_plot(ax, metric)
             
             # Add statistical annotations
             valid_data = [data for data in phase_data if len(data) > 1]
@@ -476,4 +492,95 @@ class MissionPhasesBoxplotGenerator:
             f.write("with the Enhanced HRV Analysis System for comprehensive crew monitoring.\n")
         
         logger.info(f"Report generated: {report_path}")
-        return str(report_path) 
+        return str(report_path)
+    
+    def _add_reference_ranges_to_plot(self, ax, metric: str) -> None:
+        """
+        Add reference ranges to boxplot for HRV metrics.
+        
+        Args:
+            ax: Matplotlib axes object
+            metric: Metric name to look up reference ranges
+        """
+        if not hrv_reference_ranges or not get_reference_range:
+            return
+        
+        # Map metric names to standard keys
+        metric_map = {
+            'SDNN': 'sdnn',
+            'RMSSD': 'rmssd',
+            'pNN50': 'pnn50',
+            'Mean_HR': None,  # No direct reference range
+            'HF_Power': 'hf_power',
+            'LF_Power': 'lf_power',
+            'LF_HF_Ratio': 'lf_hf_ratio',
+            'VLF_Power': 'vlf_power'
+        }
+        
+        metric_key = metric_map.get(metric)
+        if not metric_key:
+            return
+        
+        ref_range = get_reference_range(metric_key)
+        if not ref_range:
+            return
+        
+        # Add normal range band (25th-75th percentile)
+        if ref_range.percentile_25 and ref_range.percentile_75:
+            ax.axhspan(
+                ref_range.percentile_25, 
+                ref_range.percentile_75,
+                alpha=0.2, 
+                color='green',
+                label='Normal Range (25th-75th percentile)',
+                zorder=0
+            )
+        
+        # Add median line
+        if ref_range.percentile_50:
+            ax.axhline(
+                ref_range.percentile_50,
+                color='green',
+                linestyle='--',
+                alpha=0.8,
+                label='Reference Median',
+                zorder=1,
+                linewidth=1.5
+            )
+        
+
+        
+        # Add citation text in corner
+        citation_info = hrv_reference_ranges.get_citation_info(metric_key)
+        if citation_info:
+            citation_text = f"Ref: {citation_info['population'][:30]}..."
+            ax.text(
+                0.02, 0.02,
+                citation_text,
+                transform=ax.transAxes,
+                fontsize=8,
+                alpha=0.7,
+                bbox=dict(
+                    boxstyle="round,pad=0.3",
+                    facecolor="white",
+                    alpha=0.8,
+                    edgecolor="gray"
+                )
+            )
+        
+        # Add legend for reference ranges
+        handles, labels = ax.get_legend_handles_labels()
+        range_handles = [h for h, l in zip(handles, labels) 
+                        if any(ref_text in l for ref_text in 
+                              ['Normal Range', 'Reference Median'])]
+        if range_handles:
+            ref_labels = [l for l in labels if any(ref_text in l for ref_text in 
+                                         ['Normal Range', 'Reference Median'])]
+            legend = ax.legend(
+                range_handles, 
+                ref_labels,
+                loc='upper right', 
+                fontsize=8,
+                framealpha=0.9
+            )
+            legend.set_zorder(10) 

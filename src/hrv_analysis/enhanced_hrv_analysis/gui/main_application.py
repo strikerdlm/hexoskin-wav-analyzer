@@ -69,11 +69,14 @@ except ImportError as e:
 # Import HRV explanations module
 try:
     from gui.hrv_metrics_explanations import show_hrv_explanations
+    from gui.citation_display import show_hrv_citations
 except ImportError:
     try:
         from enhanced_hrv_analysis.gui.hrv_metrics_explanations import show_hrv_explanations
+        from enhanced_hrv_analysis.gui.citation_display import show_hrv_citations
     except ImportError:
         show_hrv_explanations = None
+        show_hrv_citations = None
 
 # Import mission phases boxplot generator
 try:
@@ -663,6 +666,7 @@ class HRVAnalysisApp:
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="HRV Metrics Explained", command=self._show_hrv_explanations)
+        help_menu.add_command(label="Reference Ranges & Citations", command=self._show_hrv_citations)
         help_menu.add_separator()
         help_menu.add_command(label="About", command=self._show_about)
         
@@ -3633,6 +3637,26 @@ Special Thanks:
             messagebox.showerror(
                 "Error",
                 f"Could not open HRV explanations: {e}"
+            )
+    
+    def _show_hrv_citations(self):
+        """Show HRV reference ranges with scientific citations."""
+        try:
+            if show_hrv_citations is None:
+                messagebox.showerror(
+                    "Feature Unavailable",
+                    "HRV citations module is not available.\n"
+                    "Please check your installation."
+                )
+                return
+            
+            show_hrv_citations(self.root)
+            logger.info("HRV citations displayed")
+        except Exception as e:
+            logger.error(f"Error showing HRV citations: {e}")
+            messagebox.showerror(
+                "Error",
+                f"Could not open HRV citations: {e}"
             )
 
 
