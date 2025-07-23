@@ -1,6 +1,8 @@
 MIT License
 
 Copyright (c) 2025 Diego Malpica, MD
+Colombian Aerospace Force (FAC) - Aerospace Medicine Division (DIMAE)
+Valquiria Space Analog Physiological Data Analysis Suite
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -20,6 +22,88 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Note: While this software is open-source under the MIT license, it is primarily 
-intended for academic and research use in the field of aerospace medicine and 
-physiological monitoring. 
+================================================================================
+VALQUIRIA SPACE ANALOG RESEARCH PROJECT - ADDITIONAL TERMS AND CONDITIONS
+================================================================================
+
+This software is part of the Valquiria Space Analog Physiological Data Analysis 
+Suite, developed for scientific research in aerospace medicine and space analog 
+simulation studies.
+
+RESEARCH AND EDUCATIONAL PURPOSE:
+This software is primarily intended for academic research, educational training, 
+and scientific collaboration in the fields of:
+- Aerospace medicine and physiology
+- Space analog simulation research  
+- Heart rate variability (HRV) analysis
+- Autonomic nervous system assessment
+- Physiological adaptation studies
+
+IMPORTANT DISCLAIMERS AND PROHIBITED USES:
+⚠️  This software is NOT approved for and shall NOT be used for:
+    • Military operational deployment or mission-critical systems
+    • Clinical diagnosis, treatment, or patient care
+    • Operational crew health monitoring in real missions
+    • Safety-critical applications where human life depends on the software
+    • Commercial health monitoring services without proper validation
+
+ATTRIBUTION AND CITATION REQUIREMENTS:
+If you use this software in research or publications, you MUST:
+1. Cite the software using proper academic citation format (see README.md)
+2. Acknowledge the Valquiria Space Analog Simulation research program
+3. Recognize the contribution of the Valquiria Crew participants
+4. Credit the Colombian Aerospace Force (FAC) and DIMAE when appropriate
+
+RESEARCH COLLABORATION ACKNOWLEDGMENTS:
+This research was made possible through collaboration with:
+- Valquiria Crew participants who volunteered for space analog simulation
+- Women AeroSTEAM for educational partnership and STEAM advancement
+- Centro de Telemedicina de Colombia for technical and medical expertise
+- Colombian Aerospace Force (FAC) and DIMAE for mission support
+
+DATA PRIVACY AND ETHICAL CONSIDERATIONS:
+Users of this software agree to:
+- Respect the privacy and confidentiality of research participants
+- Follow ethical guidelines for human subjects research
+- Obtain proper institutional approvals before using with human data
+- Comply with applicable data protection regulations (GDPR, HIPAA, etc.)
+
+SCIENTIFIC INTEGRITY:
+Users are expected to:
+- Use the software responsibly for legitimate scientific purposes
+- Report any bugs, issues, or limitations discovered during use
+- Contribute improvements back to the research community when possible
+- Maintain scientific standards and integrity in all applications
+
+MODIFICATION AND DISTRIBUTION:
+While this software is open-source under MIT license:
+- Modifications should maintain scientific accuracy and validation
+- Derivative works should preserve these additional terms and acknowledgments
+- Commercial applications require separate validation and regulatory approval
+- Educational use is encouraged with proper attribution
+
+CONTACT AND SUPPORT:
+For questions about appropriate use, licensing, or research collaboration:
+Primary Contact: Dr. Diego Malpica MD (dlmalpicah@unal.edu.co)
+Organization: Colombian Aerospace Force (FAC) - DIMAE
+
+VERSION AND UPDATES:
+This license applies to Valquiria Space Analog Physiological Data Analysis Suite
+Version 2.0.1 and all subsequent versions unless explicitly modified.
+
+By using this software, you acknowledge that you have read, understood, and 
+agree to comply with both the MIT License terms and these additional conditions 
+specific to the Valquiria Space Analog research project.
+
+================================================================================
+DEDICATION
+================================================================================
+
+This software is dedicated to advancing our understanding of human physiological 
+adaptation in extreme environments and supporting the future of human space 
+exploration. Special recognition goes to the brave Valquiria Crew members whose 
+participation in space analog simulations made this research possible.
+
+"Per aspera ad astra" - Through hardships to the stars
+
+================================================================================ 
