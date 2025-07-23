@@ -301,7 +301,7 @@ For LaTeX users:
   version = {2.0.1},
   year = {2024},
   organization = {Colombian Aerospace Force (FAC), Aerospace Medicine Division (DIMAE)},
-  url = {https://github.com/[repository-url]},
+  url = {https://github.com/strikerdlm/hexoskin-wav-analyzer},
   note = {Physiological Research Platform for space analog studies}
 }
 ```
