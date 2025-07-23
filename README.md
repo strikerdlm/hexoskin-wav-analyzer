@@ -279,7 +279,7 @@ If you use this software in your research or publications, please cite it using 
 
 **Software Citation:**
 ```
-Malpica, D. (2024). Valquiria Space Analog Physiological Data Analysis Suite (Version 2.0.1) [Computer software]. Colombian Aerospace Force (FAC), Aerospace Medicine Division (DIMAE). https://github.com/[repository-url]
+Malpica, D. (2024). Valquiria Space Analog Physiological Data Analysis Suite (Version 2.0.1) [Computer software]. Colombian Aerospace Force (FAC), Aerospace Medicine Division (DIMAE). https://github.com/strikerdlm/hexoskin-wav-analyzer
 ```
 
 **Research Program Citation:**
