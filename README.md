@@ -1,6 +1,6 @@
 # Valquiria Space Analog Physiological Data Analysis Suite
 
-**Version 2.0.0**
+**Version 2.0.1**
 
 **Author:** Dr. Diego Malpica MD - Aerospace Medicine Specialist  
 **Organization:** Colombian Aerospace Force (FAC) / DIMAE  
@@ -270,6 +270,47 @@ python test_ml_analysis.py
 - Performance Optimization
 
 **This research would not have been possible without the courage and commitment of the Valquiria Crew members who participated in the space analog simulation missions, pushing the boundaries of human space exploration research.**
+
+## 📚 How to Cite This Project
+
+If you use this software in your research or publications, please cite it using the following APA format:
+
+### APA Citation
+
+**Software Citation:**
+```
+Malpica, D. (2024). Valquiria Space Analog Physiological Data Analysis Suite (Version 2.0.1) [Computer software]. Colombian Aerospace Force (FAC), Aerospace Medicine Division (DIMAE). https://github.com/[repository-url]
+```
+
+**Research Program Citation:**
+```
+Malpica, D. (2024). Valquiria Crew Space Simulation: Physiological Research Platform for space analog studies. Colombian Aerospace Force (FAC), Aerospace Medicine Division (DIMAE).
+```
+
+### Sample In-Text Citation
+```
+The physiological data analysis was conducted using the Valquiria Space Analog Physiological Data Analysis Suite (Malpica, 2024), which provides comprehensive heart rate variability analysis and autonomic nervous system assessment capabilities for space analog research.
+```
+
+### BibTeX Entry
+For LaTeX users:
+```bibtex
+@software{malpica2024valquiria,
+  author = {Malpica, Diego},
+  title = {Valquiria Space Analog Physiological Data Analysis Suite},
+  version = {2.0.1},
+  year = {2024},
+  organization = {Colombian Aerospace Force (FAC), Aerospace Medicine Division (DIMAE)},
+  url = {https://github.com/[repository-url]},
+  note = {Physiological Research Platform for space analog studies}
+}
+```
+
+### Acknowledgment in Publications
+When publishing research that uses this software, please also acknowledge:
+- The Valquiria Crew participants for their contribution to space analog research
+- The Colombian Aerospace Force (FAC) and DIMAE for supporting this research
+- Any specific analysis methods or features used from the software suite
 
 ## 📄 License & Usage
 
