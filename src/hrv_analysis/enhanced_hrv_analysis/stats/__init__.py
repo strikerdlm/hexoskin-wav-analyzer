@@ -8,6 +8,7 @@ This subpackage provides sophisticated statistical methods including:
 - Bootstrap confidence intervals and permutation tests
 """
 
+from .advanced_statistics import AdvancedStats as AdvancedHRVStatistics
 from .advanced_statistics import AdvancedStats
 
-__all__ = ['AdvancedStats'] 
+__all__ = ['AdvancedStats', 'AdvancedHRVStatistics'] 

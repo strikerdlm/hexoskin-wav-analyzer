@@ -8,7 +8,7 @@ This subpackage provides machine learning capabilities including:
 - Classification models for autonomic state recognition
 """
 
-from .clustering import HRVClustering
+from .clustering import HRVClustering as AutonomicPhenotypeClustering
 from .forecasting import HRVForecasting
 
-__all__ = ['HRVClustering', 'HRVForecasting'] 
+__all__ = ['AutonomicPhenotypeClustering', 'HRVForecasting'] 

@@ -1,6 +1,6 @@
-NumPy version: 1.26.4
-Pandas version: 2.2.3
-Matplotlib version: 3.10.1
-SciPy version: 1.15.2
+NumPy version: 2.3.2
+Pandas version: 2.3.2
+Matplotlib version: 3.10.5
+SciPy version: 1.16.1
 
 All libraries imported successfully!

@@ -177,66 +177,59 @@ class HRVClustering:
     def perform_kmeans_clustering(self,
                                 hrv_data: pd.DataFrame,
                                 n_clusters: int = None,
-                                feature_selection: List[str] = None) -> ClusterResult:
+                                feature_selection: List[str] = None,
+                                feature_columns: List[str] = None) -> ClusterResult:
         """
         Perform K-means clustering on HRV metrics.
         
         Args:
             hrv_data: DataFrame with HRV metrics
             n_clusters: Number of clusters (if None, will be determined automatically)
-            feature_selection: List of specific features to use for clustering
-            
-        Returns:
-            Clustering results
+            feature_selection: Deprecated alias for feature_columns
+            feature_columns: List of specific features to use for clustering
         """
         try:
+            # Normalize parameter alias
+            if feature_columns is None and feature_selection is not None:
+                feature_columns = feature_selection
             # Feature selection
-            if feature_selection is not None:
-                available_features = [f for f in feature_selection if f in hrv_data.columns]
+            if feature_columns is not None:
+                available_features = [f for f in feature_columns if f in hrv_data.columns]
                 if not available_features:
                     logger.error("None of the specified features found in data")
                     return self._create_empty_cluster_result()
                 clustering_data = hrv_data[available_features]
             else:
                 clustering_data = hrv_data.select_dtypes(include=[np.number])
-                
             # Prepare data
             X = self._prepare_data(clustering_data)
             if X is None:
                 return self._create_empty_cluster_result()
-                
             # Determine number of clusters if not specified
             if n_clusters is None:
                 validation_results = self.find_optimal_clusters(clustering_data)
                 n_clusters = validation_results.optimal_k
                 logger.info(f"Automatically selected {n_clusters} clusters")
-                
             # Perform K-means clustering
             kmeans = KMeans(n_clusters=n_clusters, random_state=self.random_state, n_init=10)
             cluster_labels = kmeans.fit_predict(X)
             cluster_centers = kmeans.cluster_centers_
-            
             # Store model
             self.cluster_model = kmeans
-            
             # Compute validation metrics
             sil_score = silhouette_score(X, cluster_labels) if len(np.unique(cluster_labels)) > 1 else 0
             ch_score = calinski_harabasz_score(X, cluster_labels) if len(np.unique(cluster_labels)) > 1 else 0
             db_score = davies_bouldin_score(X, cluster_labels) if len(np.unique(cluster_labels)) > 1 else float('inf')
-            
             # Compute cluster sizes
             unique_labels, counts = np.unique(cluster_labels, return_counts=True)
             cluster_sizes = dict(zip(unique_labels, counts))
-            
             # Compute cluster profiles
             cluster_profiles = self._compute_cluster_profiles(clustering_data, cluster_labels)
-            
             # Transform centers back to original scale if standardized
             if self.scaler is not None:
                 cluster_centers_original = self.scaler.inverse_transform(cluster_centers)
             else:
                 cluster_centers_original = cluster_centers
-                
             result = ClusterResult(
                 cluster_labels=cluster_labels,
                 cluster_centers=cluster_centers_original,
@@ -248,14 +241,12 @@ class HRVClustering:
                 cluster_sizes=cluster_sizes,
                 cluster_profiles=cluster_profiles
             )
-            
             self.cluster_results = result
             return result
-            
         except Exception as e:
             logger.error(f"Error in K-means clustering: {e}")
             return self._create_empty_cluster_result()
-            
+
     def perform_hierarchical_clustering(self,
                                       hrv_data: pd.DataFrame,
                                       n_clusters: int = None,
@@ -582,6 +573,77 @@ class HRVClustering:
             logger.error(f"Error predicting clusters: {e}")
             return np.array([])
             
+    def validate_clustering(self,
+						  features: pd.DataFrame,
+						  labels: np.ndarray) -> Dict[str, Any]:
+		"""Compute standard clustering validation metrics for given labels."""
+		try:
+			X = self._prepare_data(features)
+			if X is None or len(labels) != len(X):
+				return {'silhouette_score': 0.0, 'calinski_harabasz_score': 0.0, 'davies_bouldin_score': float('inf'), 'cluster_stability': {}}
+			metrics = {
+				'silhouette_score': float(silhouette_score(X, labels)) if len(np.unique(labels)) > 1 else 0.0,
+				'calinski_harabasz_score': float(calinski_harabasz_score(X, labels)) if len(np.unique(labels)) > 1 else 0.0,
+				'davies_bouldin_score': float(davies_bouldin_score(X, labels)) if len(np.unique(labels)) > 1 else float('inf'),
+				'cluster_stability': {}
+			}
+			return metrics
+		except Exception as e:
+			logger.error(f"Error validating clustering: {e}")
+			return {'silhouette_score': 0.0, 'calinski_harabasz_score': 0.0, 'davies_bouldin_score': float('inf'), 'cluster_stability': {}}
+
+	def analyze_feature_importance(self,
+								   hrv_data: pd.DataFrame,
+								   feature_columns: List[str],
+								   n_clusters: int) -> Dict[str, Any]:
+		"""Simple variance-based feature importance proxy across clusters."""
+		try:
+			result = self.perform_kmeans_clustering(hrv_data, n_clusters=n_clusters, feature_columns=feature_columns)
+			if result.n_clusters == 0:
+				return {'feature_importance': {}, 'cluster_separation_power': 0.0}
+			data = hrv_data[feature_columns].copy()
+			data_scaled = self._prepare_data(data)
+			labels = result.cluster_labels
+			importance = {}
+			for idx, col in enumerate(feature_columns):
+				group_means = []
+				for k in range(result.n_clusters):
+					group_means.append(np.mean(data_scaled[labels == k, idx]))
+				importance[col] = float(np.var(group_means))
+			return {'feature_importance': importance, 'cluster_separation_power': float(np.mean(list(importance.values())) if importance else 0.0)}
+		except Exception as e:
+			logger.error(f"Error analyzing feature importance: {e}")
+			return {'feature_importance': {}, 'cluster_separation_power': 0.0}
+
+	def interpret_autonomic_phenotypes(self,
+								   cluster_centers: np.ndarray,
+								   feature_names: List[str]) -> Dict[int, Dict[str, Any]]:
+		"""Heuristic interpretation based on lf_hf_ratio and rmssd/sdnn magnitudes."""
+		interpretation: Dict[int, Dict[str, Any]] = {}
+		for i, center in enumerate(cluster_centers):
+			phenotype = 'balanced'
+			characteristics = []
+			lookup = {name: center[idx] for idx, name in enumerate(feature_names)}
+			lf_hf = lookup.get('lf_hf_ratio', lookup.get('lf_hf', 1.0))
+			rmssd = lookup.get('rmssd', None)
+			sdnn = lookup.get('sdnn', None)
+			if lf_hf is not None and lf_hf >= 1.8:
+				phenotype = 'sympathetic'
+				characteristics.append('High LF/HF')
+			elif lf_hf is not None and lf_hf <= 1.0:
+				phenotype = 'parasympathetic'
+				characteristics.append('Low LF/HF')
+			if rmssd is not None and rmssd > (sdnn or rmssd) * 0.6:
+				characteristics.append('High RMSSD')
+			if sdnn is not None and sdnn > (rmssd or sdnn) * 0.6:
+				characteristics.append('High SDNN')
+			interpretation[i] = {
+				'phenotype': phenotype,
+				'characteristics': characteristics,
+				'description': f"Cluster {i} shows {phenotype} dominance"
+			}
+		return interpretation
+            
     def _prepare_data(self, hrv_data: pd.DataFrame, fit_scaler: bool = True) -> Optional[np.ndarray]:
         """Prepare data for clustering analysis."""
         try:
@@ -739,3 +801,6 @@ class HRVClustering:
             cluster_sizes={},
             cluster_profiles=pd.DataFrame()
         ) 
+
+# Backwards-compatible alias expected by tests
+AutonomicPhenotypeClustering = HRVClustering 
