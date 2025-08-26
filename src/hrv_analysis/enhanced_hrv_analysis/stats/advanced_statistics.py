@@ -1812,3 +1812,6 @@ Smooth term p-value: {significance_tests['smooth_term_pvalue']:.4f}
         direction = "positive" if correlation > 0 else "negative"
         
         return f"Significant {direction} {strength} association (r = {correlation:.3f})"
+
+# Provide backwards-compatible alias expected by tests
+AdvancedHRVStatistics = AdvancedStats
