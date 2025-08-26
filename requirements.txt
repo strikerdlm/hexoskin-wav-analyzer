@@ -53,7 +53,7 @@ pytest>=7.0.0
 pytest-cov>=4.0.0  # For coverage reporting
 
 # GUI framework
-tkinter  # Usually included with Python
+# Tkinter is part of the system Python (e.g., python3-tk). Do not install via pip.
 
 # Power analysis
 pingouin>=0.5.0  # For statistical power analysis
