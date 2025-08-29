@@ -360,3 +360,145 @@ For questions about the Valquiria Space Analog Simulation or this software platf
 **⭐ If this software contributes to your research, please cite appropriately and acknowledge the Valquiria Space Analog Simulation project.**
 
 **🔬 Developed for advancing our understanding of human physiological adaptation in extreme environments.**
+
+## 🧭 Start Here: No Experience Required (Windows/macOS/Linux)
+
+If you have never used Git, Python, or pip before, follow these simple steps. You will download a ZIP file, install Python, and run the program with a few copy‑paste commands.
+
+### 1) Download the program (no Git needed)
+- Go to the project page: [GitHub project page](https://github.com/strikerdlm/hexoskin-wav-analyzer)
+- Click the green "Code" button, then click "Download ZIP"
+- When the download finishes, open your Downloads folder and unzip the file
+  - The unzipped folder will be named something like `hexoskin-wav-analyzer-main` (or similar)
+
+### 2) Install Python (one time)
+- Windows:
+  - Visit [python.org downloads](https://www.python.org/downloads/) and download the latest Python 3 for Windows (64‑bit)
+  - Run the installer and check "Add Python to PATH" on the first screen, then click Install
+  - After installation, restart Command Prompt if it was open
+- macOS:
+  - Visit [python.org downloads](https://www.python.org/downloads/) and download the macOS installer (Universal2)
+  - Open the `.pkg` file and follow the prompts
+- Linux (Ubuntu/Debian):
+  - Open Terminal and run:
+```bash
+sudo apt update && sudo apt install -y python3 python3-venv python3-pip python3-tk
+```
+- Linux (Fedora/RHEL/CentOS):
+```bash
+sudo dnf install -y python3 python3-pip python3-tkinter
+```
+
+### 3) Open a terminal and go to the project folder
+- Windows:
+  - Press the Windows key, type "Command Prompt", and open it
+  - Type `cd` then a space, paste the folder path (or drag the folder into the window), then press Enter
+  - Example:
+```bat
+cd %HOMEPATH%\Downloads\hexoskin-wav-analyzer-main
+```
+- macOS:
+  - Open the Terminal app (Applications → Utilities → Terminal)
+```bash
+cd ~/Downloads/hexoskin-wav-analyzer-main
+```
+- Linux:
+```bash
+cd ~/Downloads/hexoskin-wav-analyzer-main
+```
+
+Tip: Your folder name may differ. Use your actual unzipped folder name.
+
+### 4) Create a safe Python environment (virtual environment)
+- Windows (Command Prompt):
+```bat
+py -3 -m venv venv
+venv\Scripts\activate
+```
+If `py` doesn’t work, try:
+```bat
+python -m venv venv
+venv\Scripts\activate
+```
+- macOS/Linux:
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+You’ll know it worked if your prompt starts with `(venv)`.
+
+### 5) Install the required packages
+- Windows:
+```bat
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+- macOS/Linux:
+```bash
+python3 -m pip install --upgrade pip
+python3 -m pip install -r requirements.txt
+```
+
+If you see an error about `tkinter` or `tk`, install it (Linux):
+```bash
+sudo apt install -y python3-tk     # Ubuntu/Debian
+sudo dnf install -y python3-tkinter  # Fedora/RHEL
+```
+
+### 6) Run the program (easy mode)
+Use the simple launcher `main.py` so you don’t need to change folders.
+
+- Check your setup:
+  - Windows:
+```bat
+python main.py info
+```
+  - macOS/Linux:
+```bash
+python3 main.py info
+```
+
+- Start the Hexoskin WAV Analyzer (GUI):
+  - Windows:
+```bat
+python main.py hexoskin
+```
+  - macOS/Linux:
+```bash
+python3 main.py hexoskin
+```
+
+- Start the Enhanced HRV Analysis system (GUI):
+  - Windows:
+```bat
+python main.py hrv
+```
+  - macOS/Linux:
+```bash
+python3 main.py hrv
+```
+
+Notes:
+- If `python` doesn’t work on Windows, try `py` instead.
+- On macOS/Linux, if `python3` is not found, install Python from [python.org downloads](https://www.python.org/downloads/).
+
+### 7) Next steps
+- Inside the app, use the GUI to open your files (e.g., Hexoskin `.wav`).
+- When you’re done, you can close the app and type `deactivate` in the terminal to exit the environment.
+
+### Later: How to run it again (next time)
+1. Open your terminal/Command Prompt and go to the same project folder
+2. Activate the environment:
+   - Windows: `venv\Scripts\activate`
+   - macOS/Linux: `source venv/bin/activate`
+3. Start the app:
+   - Hexoskin: `python main.py hexoskin` (Windows) or `python3 main.py hexoskin` (macOS/Linux)
+   - HRV: `python main.py hrv` (Windows) or `python3 main.py hrv` (macOS/Linux)
+
+### Troubleshooting (quick help)
+- “python is not recognized” on Windows: Try `py` instead of `python`.
+- “pip not found”: Use `python -m pip ...` (Windows) or `python3 -m pip ...` (macOS/Linux).
+- “tkinter/tk error” on Linux: Install `python3-tk` as shown above, then retry.
+- Permission errors on Windows PowerShell: Use Command Prompt, or run PowerShell as Administrator.
+
+That’s it—you’re up and running without needing Git or prior Python experience.
