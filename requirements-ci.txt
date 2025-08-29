@@ -1,0 +1,7 @@
+numpy==1.26.4
+pandas==2.0.3
+matplotlib==3.7.3
+scipy==1.10.1
+
+pytest==7.4.4
+pytest-cov==4.1.0
